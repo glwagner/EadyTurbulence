@@ -1,5 +1,6 @@
 using Oceananigans, PyPlot, Random, Printf
 
+using Oceananigans.TurbulenceClosures
 using Oceananigans.TurbulenceClosures: ∂x_faa, ∂x_caa, ▶x_faa, ▶y_aca, ▶x_caa, ▶xz_fac
 
 # Resolution
@@ -13,6 +14,7 @@ Lz = 1000
 # Diffusivity
 Δh = Lh / Nh
 Δz = Lz / Nz
+
 @show κh = Δh^2 / 0.25day
 κv = (Δz / Δh)^2 * κh
 
