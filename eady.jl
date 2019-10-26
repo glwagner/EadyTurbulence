@@ -3,20 +3,23 @@ using Oceananigans, PyPlot, Random, Printf
 using Oceananigans.TurbulenceClosures: ∂x_faa, ∂x_caa, ▶x_faa, ▶y_aca, ▶x_caa, ▶xz_fac
 
 # Resolution
-Nx = 64
-Ny = 64
-Nz = 16 
+Nh = 128
+Nz = 8 
 
 # Domain size
-Lx = 100e3
-Ly = 100e3
-Lz = 200
+Lh = 1000e3
+Lz = 1000
+
+# Diffusivity
+Δh = Lh / Nh
+Δz = Lz / Nz
+@show κh = Δh^2 / 0.25day
+κv = (Δz / Δh)^2 * κh
 
 # Physical parameters
  f = 1e-4     # Coriolis parameter
 N² = 1e-6     # Stratification in the "halocline"
- μ = 1e-6     # [s⁻¹] drag coefficient
- α = 1e-3     # [s⁻¹] background shear
+ α = 1e-2     # [s⁻¹] background shear
 
 # Simulation end time
 end_time = 30day
@@ -25,29 +28,65 @@ end_time = 30day
 ##### Boundary conditions
 #####
 
-@inline x_linear_drag(i, j, grid, time, iter, U, C, p) = @inbounds p.μ * grid.Lz * U.u[i, j, 1]
-@inline y_linear_drag(i, j, grid, time, iter, U, C, p) = @inbounds p.μ * grid.Lz * U.v[i, j, 1]
+# Parameters
+ μ = 1e-6     # [s⁻¹] drag coefficient
+Cτ = 0.4 # "Von Karman constant"
+z₀ = 1.0 # Must be smaller than half the grid spacing... ?
 
-u_bcs = HorizontallyPeriodicBCs(bottom = BoundaryCondition(Flux, x_linear_drag))
-v_bcs = HorizontallyPeriodicBCs(bottom = BoundaryCondition(Flux, y_linear_drag))
+@inline function τ₁₃_MoninObukhov(i, j, grid, time, iter, U, C, p)
+    s = sqrt(U.u[1]^2 + U.v[1]^2)
+    return - p.Cτ * s * U.u[1] / log(grid.Δz / (2*p.z₀))^2
+end
+
+@inline function τ₂₃_MoninObukhov(i, j, grid, time, iter, U, C, p)
+    s = sqrt(U.u[1]^2 + U.v[1]^2)
+    return - p.Cτ * s * U.v[1] / log(grid.Δz / (2*p.z₀))^2
+end
+
+@inline τ₁₃_linear_drag(i, j, grid, time, iter, U, C, p) = @inbounds p.μ * grid.Lz * U.u[i, j, 1]
+@inline τ₂₃_linear_drag(i, j, grid, time, iter, U, C, p) = @inbounds p.μ * grid.Lz * U.v[i, j, 1]
+
+u_bcs = HorizontallyPeriodicBCs(bottom = BoundaryCondition(Flux, τ₁₃_linear_drag))
+v_bcs = HorizontallyPeriodicBCs(bottom = BoundaryCondition(Flux, τ₂₃_linear_drag))
 
 #####
 ##### "Forcing" terms associated with background balanced flow
 #####
 
-# - α z ∂ₓu x̂
-u_forcing(i, j, k, grid, time, U, C, p) = @inbounds (
+#=
+# Can code up more general functions, assuming ψ is defined at (a, c, c).
+
+  ∂y_ψ(i, j, k, grid, p) = @inbounds -p.α * grid.zC[k]
+∂y∂z_ψ(i, j, k, grid, p) = -p.α
+ ∂²z_ψ(i, j, k, grid, p) = 0
+=#
+
+#
+# Total momentum forcing is
+#
+# Fu = -(α w + α z ∂ₓu) x̂ - α z ∂ₓv ŷ - α z ∂ₓ w ẑ
+#
+# while buoyancy forcing is
+#
+# Fb = - α z ∂ₓb + α f v
+#
+# Forcing must respect the staggered grid.
+
+# Fu = -α w - α z ∂ₓu is applied at location (f, c, c).  
+Fu(i, j, k, grid, time, U, C, p) = @inbounds (
     - p.α * ▶xz_fac(i, j, k, grid, U.w)
-    - p.α * grid.zC[k] * ∂x_faa(i, j, k, grid, ▶x_caa, U.u) )
+    - p.α * grid.zC[k] * ∂x_faa(i, j, k, grid, ▶x_caa, U.u))
 
-# - α z ∂ₓv ŷ - α z ∂ₓw ẑ  
-v_forcing(i, j, k, grid, time, U, C, p) = @inbounds p.α * grid.zC[k] * ∂x_caa(i, j, k, grid, ▶x_faa, U.v)
-w_forcing(i, j, k, grid, time, U, C, p) = @inbounds p.α * grid.zF[k] * ∂x_caa(i, j, k, grid, ▶x_faa, U.w)
+# Fv = - α z ∂ₓv is applied at location (c, f, c).  
+Fv(i, j, k, grid, time, U, C, p) = @inbounds -p.α * grid.zC[k] * ∂x_caa(i, j, k, grid, ▶x_faa, U.v)
 
-# - α z ∂ₓb + α f v
-b_forcing(i, j, k, grid, time, U, C, p) = @inbounds (
-        p.f * p.α * ▶y_aca(i, j, k, grid, U.v)
-      - p.α * grid.zC[k] * ∂x_caa(i, j, k, grid, ▶x_faa, C.b))
+# Fw = - α z ∂ₓw is applied at location (c, c, f).  
+Fw(i, j, k, grid, time, U, C, p) = @inbounds -p.α * grid.zF[k] * ∂x_caa(i, j, k, grid, ▶x_faa, U.w)
+
+# Fb = - α z ∂ₓb + α f v
+Fb(i, j, k, grid, time, U, C, p) = @inbounds (
+    - p.α * grid.zC[k] * ∂x_caa(i, j, k, grid, ▶x_faa, C.b)
+    + p.f * p.α * ▶y_aca(i, j, k, grid, U.v))
 
 #####
 ##### Model instantiation
@@ -55,14 +94,14 @@ b_forcing(i, j, k, grid, time, U, C, p) = @inbounds (
 
 model = Model(
          architecture = CPU(),
-                 grid = RegularCartesianGrid(size=(Nx, Ny, Nz), x=(-Lx/2, Lx/2), y=(-Ly/2, Ly/2), z=(-Lz, 0)),
+                 grid = RegularCartesianGrid(size=(Nh, Nh, Nz), x=(-Lh/2, Lh/2), y=(-Lh/2, Lh/2), z=(-Lz, 0)),
              coriolis = FPlane(f=f),
              buoyancy = BuoyancyTracer(),
               tracers = :b,
-              closure = ConstantAnisotropicDiffusivity(νv=1e-2, νh=10, κv=1e-2, κh=10),
-              forcing = ModelForcing(u=u_forcing, v=v_forcing, w=w_forcing, b=b_forcing),
-  boundary_conditions = BoundaryConditions(u=u_bcs, v=v_bcs),
-           parameters = (α=α, f=f, μ=μ)
+              closure = ConstantAnisotropicDiffusivity(νh=κh, κh=κh, νv=κv, κv=κv),
+              forcing = ModelForcing(u=Fu, v=Fv, w=Fw, b=Fb),
+  #boundary_conditions = BoundaryConditions(u=u_bcs, v=v_bcs),
+           parameters = (α=α, f=f, μ=μ, Cτ=Cτ, z₀=z₀)
 )
 
 # Initial condition
@@ -111,7 +150,7 @@ function makeplot!(fig, axs, model)
     return nothing
 end
 
-wizard = TimeStepWizard(cfl=0.01, Δt=20.0, max_change=1.1, max_Δt=10minute)
+wizard = TimeStepWizard(cfl=0.05, Δt=20.0, max_change=1.1, max_Δt=10minute)
 
 while model.clock.time < end_time
 
@@ -126,7 +165,7 @@ while model.clock.time < end_time
             model.clock.iteration, prettytime(model.clock.time), prettytime(wizard.Δt),
             umax(model), vmax(model), wmax(model), prettytime(walltime))
 
-    if model.clock.iteration % 1000 == 0
+    if model.clock.iteration % 100 == 0
         model.architecture == CPU() && makeplot!(fig, axs, model)
     end
 end
