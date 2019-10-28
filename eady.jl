@@ -18,35 +18,47 @@ Lz = 1000
 @show κh = Δh^2 / 0.25day
 κv = (Δz / Δh)^2 * κh
 
+@show κ4h = Δh^4 / 100.0day
+κ4v = (Δz / Δh)^4 * κh
+
 # Physical parameters
  f = 1e-4     # Coriolis parameter
 N² = 1e-6     # Stratification in the "halocline"
- α = 1e-2     # [s⁻¹] background shear
+ α = 1e-4     # [s⁻¹] background shear
+
+deformation_radius = sqrt(N²) * Lz / f
+baroclinic_growth_rate = sqrt(N²) / (α * f)
+
+@printf("Deformation radius: %.2f km \nBaroclinic growth rate: %.2f days\n", 
+        deformation_radius * 1e-3, baroclinic_growth_rate / day)
 
 # Simulation end time
-end_time = 30day
+end_time = 60day
 
 #####
 ##### Boundary conditions
 #####
 
 # Parameters
- μ = 1e-6     # [s⁻¹] drag coefficient
+ μ = 1 / 10000day # [s⁻¹] drag coefficient
 Cτ = 0.4 # "Von Karman constant"
 z₀ = 1.0 # Must be smaller than half the grid spacing... ?
 
 @inline function τ₁₃_MoninObukhov(i, j, grid, time, iter, U, C, p)
-    s = sqrt(U.u[1]^2 + U.v[1]^2)
-    return - p.Cτ * s * U.u[1] / log(grid.Δz / (2*p.z₀))^2
+    s = sqrt(U.u[i, j, 1]^2 + U.v[i, j, 1]^2)
+    return - p.Cτ * s * U.u[i, j, 1] / log(grid.Δz / (2*p.z₀))^2
 end
 
 @inline function τ₂₃_MoninObukhov(i, j, grid, time, iter, U, C, p)
-    s = sqrt(U.u[1]^2 + U.v[1]^2)
-    return - p.Cτ * s * U.v[1] / log(grid.Δz / (2*p.z₀))^2
+    s = sqrt(U.u[i, j, 1]^2 + U.v[i, j, 1]^2)
+    return - p.Cτ * s * U.v[i, j, 1] / log(grid.Δz / (2*p.z₀))^2
 end
 
 @inline τ₁₃_linear_drag(i, j, grid, time, iter, U, C, p) = @inbounds p.μ * grid.Lz * U.u[i, j, 1]
 @inline τ₂₃_linear_drag(i, j, grid, time, iter, U, C, p) = @inbounds p.μ * grid.Lz * U.v[i, j, 1]
+
+@inline τ₁₃_quadratic_drag(i, j, grid, time, iter, U, C, p) = @inbounds p.μ * grid.Lz * U.u[i, j, 1]
+@inline τ₂₃_quadraticar_drag(i, j, grid, time, iter, U, C, p) = @inbounds p.μ * grid.Lz * U.v[i, j, 1]
 
 u_bcs = HorizontallyPeriodicBCs(bottom = BoundaryCondition(Flux, τ₁₃_linear_drag))
 v_bcs = HorizontallyPeriodicBCs(bottom = BoundaryCondition(Flux, τ₂₃_linear_drag))
@@ -77,17 +89,17 @@ v_bcs = HorizontallyPeriodicBCs(bottom = BoundaryCondition(Flux, τ₂₃_linear
 # Fu = -α w - α z ∂ₓu is applied at location (f, c, c).  
 Fu(i, j, k, grid, time, U, C, p) = @inbounds (
     - p.α * ▶xz_fac(i, j, k, grid, U.w)
-    - p.α * grid.zC[k] * ∂x_faa(i, j, k, grid, ▶x_caa, U.u))
+    - p.α * (grid.zC[k] + grid.Lz) * ∂x_faa(i, j, k, grid, ▶x_caa, U.u))
 
 # Fv = - α z ∂ₓv is applied at location (c, f, c).  
-Fv(i, j, k, grid, time, U, C, p) = @inbounds -p.α * grid.zC[k] * ∂x_caa(i, j, k, grid, ▶x_faa, U.v)
+Fv(i, j, k, grid, time, U, C, p) = @inbounds -p.α * (grid.zC[k] + grid.Lz) * ∂x_caa(i, j, k, grid, ▶x_faa, U.v)
 
 # Fw = - α z ∂ₓw is applied at location (c, c, f).  
-Fw(i, j, k, grid, time, U, C, p) = @inbounds -p.α * grid.zF[k] * ∂x_caa(i, j, k, grid, ▶x_faa, U.w)
+Fw(i, j, k, grid, time, U, C, p) = @inbounds -p.α * (grid.zF[k] + grid.Lz) * ∂x_caa(i, j, k, grid, ▶x_faa, U.w)
 
 # Fb = - α z ∂ₓb + α f v
 Fb(i, j, k, grid, time, U, C, p) = @inbounds (
-    - p.α * grid.zC[k] * ∂x_caa(i, j, k, grid, ▶x_faa, C.b)
+    - p.α * (grid.zC[k] + grid.Lz) * ∂x_caa(i, j, k, grid, ▶x_faa, C.b)
     + p.f * p.α * ▶y_aca(i, j, k, grid, U.v))
 
 #####
@@ -96,11 +108,13 @@ Fb(i, j, k, grid, time, U, C, p) = @inbounds (
 
 model = Model(
          architecture = CPU(),
-                 grid = RegularCartesianGrid(size=(Nh, Nh, Nz), x=(-Lh/2, Lh/2), y=(-Lh/2, Lh/2), z=(-Lz, 0)),
+                 grid = RegularCartesianGrid(size=(Nh, Nh, Nz), halo=(2, 2, 2), 
+                                             x=(-Lh/2, Lh/2), y=(-Lh/2, Lh/2), z=(-Lz, 0)),
              coriolis = FPlane(f=f),
              buoyancy = BuoyancyTracer(),
               tracers = :b,
-              closure = ConstantAnisotropicDiffusivity(νh=κh, κh=κh, νv=κv, κv=κv),
+              #closure = ConstantAnisotropicDiffusivity(νh=κh, κh=κh, νv=κv, κv=κv),
+              closure = AnisotropicBiharmonicDiffusivity(νh=κ4h, κh=κ4h, νv=κ4v, κv=κ4v),
               forcing = ModelForcing(u=Fu, v=Fv, w=Fw, b=Fb),
   #boundary_conditions = BoundaryConditions(u=u_bcs, v=v_bcs),
            parameters = (α=α, f=f, μ=μ, Cτ=Cτ, z₀=z₀)
@@ -123,8 +137,8 @@ wmax = FieldMaximum(abs, model.velocities.w)
 
 # Set up output
 fields_to_output = merge(model.velocities, (b=model.tracers.b,))
-output_writer = JLD2OutputWriter(model, FieldOutputs(fields_to_output); interval=day, prefix="beaufort_gyre",
-                                 force=true)
+output_writer = JLD2OutputWriter(model, FieldOutputs(fields_to_output); interval=day, prefix="eady",
+                                 force=true, max_filesize=1GiB)
 
 # Create a figure
 close("all")
