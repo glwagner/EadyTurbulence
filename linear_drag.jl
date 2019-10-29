@@ -22,10 +22,10 @@ Lz = 1000
 κ4v = (Δz / Δh)^4 * κh
 
 # Physical parameters
- f = 1e-4     # Coriolis parameter
-N² = 1e-4     # Stratification in the "halocline"
- α = 1e-4     # [s⁻¹] background shear
-Cd = 1e-2     # Drag coefficient
+ f = 1e-4      # Coriolis parameter
+N² = 1e-5      # Stratification in the "halocline"
+ α = 1e-4      # [s⁻¹] background shear
+ μ = 1 / 30day # [s⁻¹] drag coefficient
 
 deformation_radius = sqrt(N²) * Lz / f
 baroclinic_growth_rate = sqrt(N²) / (α * f)
@@ -40,11 +40,6 @@ end_time = 60day
 ##### Boundary conditions
 #####
 
-# Parameters
- μ = 1 / 10000day # [s⁻¹] drag coefficient
-Cτ = 0.4 # "Von Karman constant"
-z₀ = 1.0 # Must be smaller than half the grid spacing... ?
-
 @inline τ₁₃_linear_drag(i, j, grid, time, iter, U, C, p) = @inbounds p.μ * grid.Lz * U.u[i, j, 1]
 @inline τ₂₃_linear_drag(i, j, grid, time, iter, U, C, p) = @inbounds p.μ * grid.Lz * U.v[i, j, 1]
 
@@ -54,14 +49,6 @@ v_bcs = HorizontallyPeriodicBCs(bottom = BoundaryCondition(Flux, τ₂₃_linear
 #####
 ##### "Forcing" terms associated with background balanced flow
 #####
-
-#=
-# Can code up more general functions, assuming ψ is defined at (a, c, c).
-
-  ∂y_ψ(i, j, k, grid, p) = @inbounds -p.α * grid.zC[k]
-∂y∂z_ψ(i, j, k, grid, p) = -p.α
- ∂²z_ψ(i, j, k, grid, p) = 0
-=#
 
 #
 # Total momentum forcing is
@@ -106,7 +93,7 @@ model = Model(
               #closure = AnisotropicBiharmonicDiffusivity(νh=κ4h, κh=κ4h, νv=κ4v, κv=κ4v),
               forcing = ModelForcing(u=Fu, v=Fv, w=Fw, b=Fb),
   #boundary_conditions = BoundaryConditions(u=u_bcs, v=v_bcs),
-           parameters = (α=α, f=f, μ=μ, Cτ=Cτ, z₀=z₀, Cd=Cd)
+           parameters = (α=α, f=f, μ=μ)
 )
 
 # Initial condition
@@ -137,7 +124,7 @@ while model.clock.time < end_time
     update_Δt!(wizard, model)
 
     ## Time step the model forward
-    walltime = @elapsed time_step!(model, 10, wizard.Δt)
+    walltime = Base.@elapsed time_step!(model, 10, wizard.Δt)
 
     ## Print a progress message
     @printf("i: %04d, t: %s, Δt: %s, umax = (%.1e, %.1e, %.1e) ms⁻¹, wall time: %s\n",
