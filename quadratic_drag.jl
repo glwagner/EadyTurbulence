@@ -67,12 +67,10 @@ Fu(i, j, k, grid, time, U, C, p) = @inbounds (
     - p.α * (grid.zC[k] + grid.Lz) * ∂x_faa(i, j, k, grid, ▶x_caa, U.u))
 
 # Fv = - α (z + H) ∂ₓv is applied at location (c, f, c).  
-Fv(i, j, k, grid, time, U, C, p) = (@inbounds -p.α * (grid.zC[k] + grid.Lz) * ∂x_caa(i, j, k, grid, ▶x_faa, U.v)
-                                   ) #+ ifelse(k==1, -p.Cd * U.u[i, j, 1]^2, 0))
+Fv(i, j, k, grid, time, U, C, p) = @inbounds -p.α * (grid.zC[k] + grid.Lz) * ∂x_caa(i, j, k, grid, ▶x_faa, U.v)
 
 # Fw = - α (z + H) ∂ₓw is applied at location (c, c, f).  
-Fw(i, j, k, grid, time, U, C, p) = (@inbounds -p.α * (grid.zF[k] + grid.Lz) * ∂x_caa(i, j, k, grid, ▶x_faa, U.w)
-                                   ) # + ifelse(k==1, -p.Cd * U.v[i, j, 1]^2, 0))
+Fw(i, j, k, grid, time, U, C, p) = @inbounds -p.α * (grid.zF[k] + grid.Lz) * ∂x_caa(i, j, k, grid, ▶x_faa, U.w)
 
 # Fb = - α z ∂ₓb + α f v
 Fb(i, j, k, grid, time, U, C, p) = @inbounds (
@@ -93,7 +91,7 @@ model = Model(
               closure = ConstantAnisotropicDiffusivity(νh=κh, κh=κh, νv=κv, κv=κv),
               #closure = AnisotropicBiharmonicDiffusivity(νh=κ4h, κh=κ4h, νv=κ4v, κv=κ4v),
               forcing = ModelForcing(u=Fu, v=Fv, w=Fw, b=Fb),
-  #boundary_conditions = BoundaryConditions(u=u_bcs, v=v_bcs),
+  boundary_conditions = BoundaryConditions(u=u_bcs, v=v_bcs),
            parameters = (α=α, f=f, Cd=Cd)
 )
 
