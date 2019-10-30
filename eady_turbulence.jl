@@ -1,6 +1,6 @@
 using Oceananigans, Random, Printf
 
-# Some useful utilities
+# Some useful (essential) utilities:
 include("eady_utils.jl")
 
 #####
@@ -12,14 +12,14 @@ Nh = 256                 # horizontal resolution
 Nz = 128                 # vertical resolution
 
 # Domain size            
-Lh = 1000e3              # [meters]
-Lz = 1000                # [meters]
-Δh = Lh / Nh             # horizontal grid spacing used in diffusivity calculations
-Δz = Lz / Nz             # vertical grid spacing used in diffusivity calculations
+Lh = 1000e3              # [meters] horizontal domain extent
+Lz = 1000                # [meters] vertical domain extent
+Δh = Lh / Nh             # [meters] horizontal grid spacing for diffusivity calculations
+Δz = Lz / Nz             # [meters] vertical grid spacing for diffusivity calculations
 
 # Physical parameters
-  f = 1e-4               # Coriolis parameter
- N² = 1e-5               # Initial buoyancy gradient [s⁻²]
+  f = 1e-4               # [s⁻¹] Coriolis parameter
+ N² = 1e-5               # [s⁻²] Initial buoyancy gradient 
   α = 1e-4               # [s⁻¹] background shear
 
  κₕ = Δh^2 / 0.25day     # [m² s⁻¹] Laplacian horizontal diffusivity
@@ -51,6 +51,9 @@ forcing, forcing_parameters = background_geostrophic_flow_forcing(geostrophic_sh
 #closure = ConstantAnisotropicDiffusivity(νh=κₕ, κh=κₕ, νv=κᵥ, κv=κᵥ)
 #closure = AnisotropicMinimumDissipation()
 closure = AnisotropicBiharmonicDiffusivity(νh=κ₄ₕ, κh=κ₄ₕ, νv=κ₄ᵥ, κv=κ₄ᵥ)
+
+# Form a prefix from chosen resolution, boundary condition, and closure name
+output_filename_prefix = "eady_turb_Nh$Nh_Nz$Nz_" * bottom_bc_name(ubcs) * "_" * closure_name(closure)
 
 #####
 ##### Instantiate the model
@@ -95,7 +98,7 @@ wmax = FieldMaximum(abs, model.velocities.w)
 # Set up output. Here we output the velocity and buoyancy fields at intervals of one day.
 fields_to_output = merge(model.velocities, (b=model.tracers.b,))
 output_writer = JLD2OutputWriter(model, FieldOutputs(fields_to_output); 
-                                 interval=day, prefix="eady_linear_drag", 
+                                 interval=day, prefix=output_filename_prefix,
                                  force=true, max_filesize=10GiB)
 
 # The TimeStepWizard manages the time-step adaptively, keeping the CFL close to a

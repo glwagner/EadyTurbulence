@@ -86,10 +86,19 @@ function Monin_Obukhov_boundary_conditions(; N², Von_Karman_constant=0.41, roug
     return ubcs, vbcs, bbcs, parameters
 end
 
-
-
 function background_geostrophic_flow_forcing(; geostrophic_shear, f)
     forcing = ModelForcing(u=Fu_eady, v=Fv_eady, w=Fw_eady, b=Fb_eady)
     forcing_parameters = (α=α, f=f)
     return forcing, forcing_parameters
 end
+
+bc_function_name(::typeof(τ₁₃_linear_drag)) = "linear_drag"
+bc_function_name(::typeof(τ₁₃_quadratic_drag)) = "quadratic_drag"
+bc_function_name(::typeof(τ₁₃_Monin_Obukhov)) = "Monin_Obukhov"
+
+bottom_bc_name(ubcs) = bc_function_name(ubcs.z.bottom.condition)
+
+closure_name(closure) = string(typeof(closure).name.wrapper)
+
+
+
