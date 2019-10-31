@@ -21,7 +21,7 @@ $ julia --project # open julia with the `EadyTurbulence` environment activated
 
 Alternatively, the packages can be installed by opening julia and running
 
-```julia
+```
 julia>] # "close backet" enters package manager mode
 pkg> add PyPlot Random Printf https://github.com/climate-machine/Oceananigans.jl.git#glw/eady-example
 ```
