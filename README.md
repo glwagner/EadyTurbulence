@@ -1,6 +1,8 @@
 # EadyTurbulence
 
-Some notes:
+This repository contains scripts for simulating the baroclinic equilibration of the "Eady problem".
+
+## Notes
 
 * To download the code in this repository, open a terminal and type 
 
@@ -35,3 +37,9 @@ julia> include("simple_eady.jl")
 * The script `simple_eady.jl` sets up an Eady equilibration example with simple boundary conditions.
 * The script `eady_turbulence.jl` sets up an Eady equilibration example allowing for various boundary conditions defined by functions in the auxiliary script `eady_utils.jl`.
 * The script `eady_utils.jl` defines functions that help users set up linear drag, quadratic drag, and Monin-Obukhov boundary conditions.
+
+## Some challenges
+
+* Identifying the magnitude of the horizontal biharmonic and vertical Laplacian diffusivities is tricky and may depend on the prescribed ambient shear / baroclinic growth rate
+
+* Choosing the magnitude of noise in the initial condition is also challenging. Some noise seems to be beneficial for numerical stability / transition to turbulence, but too much causes obvious issues.
