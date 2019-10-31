@@ -146,6 +146,12 @@ xF_xy = repeat(reshape(model.grid.xF[1:end-1], nx, 1), 1, ny)
 yC_xy = repeat(reshape(model.grid.yC, 1, ny), nx, 1)
 yF_xy = repeat(reshape(model.grid.yF[1:end-1], 1, ny), nx, 1)
 
+xC_xz = repeat(reshape(model.grid.xC, nx, 1), 1, nz)
+xF_xz = repeat(reshape(model.grid.xF[1:end-1], nx, 1), 1, nz)
+
+zC_xz = repeat(reshape(model.grid.zC, 1, nz), nx, 1)
+zF_xz = repeat(reshape(model.grid.zF[1:end-1], 1, nz), nx, 1)
+
 # This time-stepping loop runs until end_time is reached.
 while model.clock.time < end_time
 
@@ -160,24 +166,31 @@ while model.clock.time < end_time
             model.clock.iteration, prettytime(model.clock.time), prettytime(wizard.Δt),
             umax(), vmax(), wmax(), prettytime(walltime))
 
-    if model.clock.iteration % 100 == 0
+    if model.clock.iteration % 50 == 0
         compute!(vertical_vorticity)
         compute!(divergence)
 
         @printf("\n\nmax ζ/f: %.2e, max δ/f: %.2e\n\n", ζmax()/f, δmax()/f)
 
         sca(ax1); cla()
-        pcolormesh(xF_xy, yF_xy, Array(interior(ζ)[:, :, Nz]))
+        pcolormesh(xF_xy/1e3, yF_xy/1e3, Array(interior(ζ)[:, :, Nz]))
+        ylabel("y [km]")
+        title("vertical vorticity")
 
         sca(ax2); cla()
-        pcolormesh(xC_xy, yC_xy, Array(interior(ζ)[:, :, Nz]))
+        pcolormesh(xC_xy/1e3, yC_xy/1e3, Array(interior(δ)[:, :, Nz]))
+        title("divergence")
 
         sca(ax3); cla()
-        imshow(rotl90(Array(interior(ζ)[:, Int(Nh/2), :])))
+        pcolormesh(xF_xz/1e3, zC_xz, Array(interior(ζ)[:, Int(Nh/2), :]))
+        xlabel("x [km]"); ylabel("z [m]")
+        title("vertical vorticity")
 
         sca(ax4); cla()
-        imshow(rotl90(Array(interior(w)[:, Int(Nh/2), :])))
-
+        pcolormesh(xF_xz/1e3, zC_xz, Array(interior(w)[:, Int(Nh/2), :]))
+        xlabel("x [km]")
+        title("vertical velocity")
+        
         pause(0.1)
     end
 end
