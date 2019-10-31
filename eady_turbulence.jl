@@ -1,4 +1,7 @@
-using Oceananigans, Random, Printf
+using Oceananigans, 
+      Oceananigans.Diagnostics, 
+      Oceananigans.OutputWriters, 
+      Random, Printf
 
 # Some useful (essential) utilities:
 include("eady_utils.jl")
@@ -48,13 +51,11 @@ ubcs, vbcs, bbcs, bc_parameters = linear_drag_boundary_conditions(N²=N², μ=1/
 forcing, forcing_parameters = background_geostrophic_flow_forcing(geostrophic_shear=α, f=f)
 
 # Turbulence closure: 
-#closure = ConstantAnisotropicDiffusivity(νh=κh, κh=κh, νv=κv, κv=κv)
-#closure = AnisotropicMinimumDissipation()
-closure = HorizontalBiharmonicDiffusivity(νh=κ₄h, κh=κ₄h, νv=κv, κv=κv)
+closure =   (ConstantAnisotropicDiffusivity(νh=0, κh=0, νv=κᵥ, κv=κᵥ),
+           AnisotropicBiharmonicDiffusivity(νv=0, κv=0, νh=κ₄h, κh=κ₄h))
 
-# Form a prefix from chosen resolution, boundary condition, and closure name
-output_filename_prefix = string("eady_turb_Nh", Nh, "_Nz", Nz, "_", 
-                                bottom_bc_name(ubcs), "_", closure_name(closure))
+# Form a prefix from chosen resolution, and boundary condition
+output_filename_prefix = string("eady_turb_Nh", Nh, "_Nz", Nz, "_", bottom_bc_name(ubcs))
 
 println("Outputing to file: $output_filename_prefix")
 
