@@ -8,8 +8,8 @@ include("eady_utils.jl")
 #####
 
 # Resolution
-Nh = 256                 # horizontal resolution
-Nz = 128                 # vertical resolution
+Nh = 128                 # horizontal resolution
+Nz = 32                  # vertical resolution
 
 # Domain size            
 Lh = 1000e3              # [meters] horizontal domain extent
@@ -22,11 +22,11 @@ Lz = 1000                # [meters] vertical domain extent
  N² = 1e-5               # [s⁻²] Initial buoyancy gradient 
   α = 1e-4               # [s⁻¹] background shear
 
- κₕ = Δh^2 / 0.25day     # [m² s⁻¹] Laplacian horizontal diffusivity
-κ₄ₕ = Δh^4 / 0.25day     # [m⁴ s⁻¹] Biharmonic horizontal diffusivity
+ κh = Δh^2 / 2day        # [m² s⁻¹] Laplacian horizontal diffusivity
+κ₄h = Δh^4 / 2day        # [m⁴ s⁻¹] Biharmonic horizontal diffusivity
 
- κᵥ = (Δz / Δh)^2 * κₕ   # [m² s⁻¹] Laplacian vertical diffusivity
-κ₄ᵥ = (Δz / Δh)^4 * κ₄ₕ  # [m⁴ s⁻¹] Biharmonic vertical diffusivity
+ κv = (Δz / Δh)^2 * κh   # [m² s⁻¹] Laplacian vertical diffusivity
+κ₄v = (Δz / Δh)^4 * κ₄h  # [m⁴ s⁻¹] Biharmonic vertical diffusivity
 
 end_time = 60day # Simulation end time
 
@@ -48,12 +48,15 @@ ubcs, vbcs, bbcs, bc_parameters = linear_drag_boundary_conditions(N²=N², μ=1/
 forcing, forcing_parameters = background_geostrophic_flow_forcing(geostrophic_shear=α, f=f)
 
 # Turbulence closure: 
-#closure = ConstantAnisotropicDiffusivity(νh=κₕ, κh=κₕ, νv=κᵥ, κv=κᵥ)
+#closure = ConstantAnisotropicDiffusivity(νh=κh, κh=κh, νv=κv, κv=κv)
 #closure = AnisotropicMinimumDissipation()
-closure = AnisotropicBiharmonicDiffusivity(νh=κ₄ₕ, κh=κ₄ₕ, νv=κ₄ᵥ, κv=κ₄ᵥ)
+closure = HorizontalBiharmonicDiffusivity(νh=κ₄h, κh=κ₄h, νv=κv, κv=κv)
 
 # Form a prefix from chosen resolution, boundary condition, and closure name
-output_filename_prefix = "eady_turb_Nh$Nh_Nz$Nz_" * bottom_bc_name(ubcs) * "_" * closure_name(closure)
+output_filename_prefix = string("eady_turb_Nh", Nh, "_Nz", Nz, "_", 
+                                bottom_bc_name(ubcs), "_", closure_name(closure))
+
+println("Outputing to file: $output_filename_prefix")
 
 #####
 ##### Instantiate the model
@@ -61,7 +64,7 @@ output_filename_prefix = "eady_turb_Nh$Nh_Nz$Nz_" * bottom_bc_name(ubcs) * "_" *
 
 # Model instantiation
 model = Model( grid = RegularCartesianGrid(size=(Nh, Nh, Nz), halo=(2, 2, 2), x=(-Lh/2, Lh/2), y=(-Lh/2, Lh/2), z=(-Lz, 0)),
-       architecture = GPU(),
+       architecture = CPU(),
            coriolis = FPlane(f=f),
            buoyancy = BuoyancyTracer(), tracers = :b,
             forcing = forcing,
@@ -103,11 +106,14 @@ output_writer = JLD2OutputWriter(model, FieldOutputs(fields_to_output);
 
 # The TimeStepWizard manages the time-step adaptively, keeping the CFL close to a
 # desired value.
-wizard = TimeStepWizard(cfl=0.05, Δt=20.0, max_change=1.1, max_Δt=10minute)
+wizard = TimeStepWizard(cfl=0.05, Δt=20.0, max_change=1.1, max_Δt=20minute)
 
 #####
 ##### Time step the model forward
 #####
+
+using PyPlot
+fig, axs = subplots(ncols=2)
 
 # This time-stepping loop runs until end_time is reached. It prints a progress statement
 # every 100 iterations.
@@ -119,10 +125,19 @@ while model.clock.time < end_time
     ## Time step the model forward
     walltime = Base.@elapsed time_step!(model, 10, wizard.Δt)
 
-    if model.clock.iteration % 100 == 0
+    #if model.clock.iteration % 100 == 0
         ## Print a progress message
         @printf("i: %04d, t: %s, Δt: %s, umax = (%.1e, %.1e, %.1e) ms⁻¹, wall time: %s\n",
                 model.clock.iteration, prettytime(model.clock.time), prettytime(wizard.Δt),
                 umax(model), vmax(model), wmax(model), prettytime(walltime))
+    #end
+
+    if model.clock.iteration % 100 == 0
+        sca(axs[1]); cla()
+        imshow(interior(model.velocities.u)[:, :, Nz])
+
+        sca(axs[2]); cla()
+        imshow(interior(model.velocities.w)[:, :, Nz-1])
+        pause(1.0)
     end
 end
