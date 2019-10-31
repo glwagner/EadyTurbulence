@@ -1,14 +1,9 @@
-# # Eady turbulence example
-#
-# In this example, we initialize a random velocity field and observe its viscous,
-# turbulent decay in a two-dimensional domain. This example demonstrates:
-#
-#   * How to use a tuple of turbulence closures
-#   * How to use biharmonic diffusivity
-#   * How to implement a background flow (a background geostrophic shear)
+# Eady turbulence example
 
-using Oceananigans, Oceananigans.Diagnostics, Oceananigans.OutputWriters,
-      Random, Printf, Oceananigans.AbstractOperations
+using Oceananigans, 
+      Oceananigans.Diagnostics, 
+      Oceananigans.AbstractOperations,
+      Random, Printf
 
 using Oceananigans.TurbulenceClosures: ∂x_faa, ∂x_caa, ▶x_faa, ▶y_aca, ▶x_caa, ▶xz_fac
 
@@ -20,18 +15,18 @@ using Oceananigans: Face, Cell
 
  Nh = 64          # horizontal resolution
  Nz = 32          # vertical resolution
- Lh = 2e6         # [meters] horizontal domain extent
+ Lh = 1e6         # [meters] horizontal domain extent
  Lz = 4e3         # [meters] vertical domain extent
- Rᵈ = Lh / 10     # [m] Deformation radius
- σᵇ = 7.0day      # [s] Growth rate for baroclinic instability
- τᵏ = 1.0day      # [s] biharmonic / viscous damping timescale
+ Rᵈ = Lh / 8      # [m] Deformation radius
+ σᵇ = 1.0day      # [s] Growth rate for baroclinic instability
+ τᵏ = 0.1day      # [s] biharmonic / viscous damping time scale at grid scale
   μ = 1/30day     # [s⁻¹] linear drag decay scale
   f = 1e-4        # [s⁻¹] Coriolis parameter
 
  Δh = Lh / Nh     # [meters] horizontal grid spacing for diffusivity calculations
  Δz = Lz / Nz     # [meters] vertical grid spacing for diffusivity calculations
-κ₄h = Δh^4 / τᵏ   # [m⁴ s⁻¹] Biharmonic horizontal diffusivity
- κᵥ = Δz^2 / 20τᵏ # [m² s⁻¹] Laplacian vertical diffusivity
+@show κ₄h = Δh^4 / τᵏ   # [m⁴ s⁻¹] Biharmonic horizontal diffusivity
+@show  κᵥ = Δz^2 / 20τᵏ # [m² s⁻¹] Laplacian vertical diffusivity
 
 @show N² = (Rᵈ * f / Lz)^2      # [s⁻²] Initial buoyancy gradient 
 @show  α = sqrt(N²) / (f * σᵇ)  # [s⁻¹] background shear
@@ -45,17 +40,9 @@ end_time = 60day # Simulation end time
 ##### Choose boundary conditions and the turbulence closure
 #####
 
-bc_parameters = (μ=μ, H=Lz)
-
-@inline τ₁₃_linear_drag(i, j, grid, time, iter, U, C, p) = @inbounds p.μ * p.H * U.u[i, j, 1]
-@inline τ₂₃_linear_drag(i, j, grid, time, iter, U, C, p) = @inbounds p.μ * p.H * U.v[i, j, 1]
-
-ubcs = HorizontallyPeriodicBCs() #bottom = BoundaryCondition(Flux, τ₁₃_linear_drag))
-vbcs = HorizontallyPeriodicBCs() #bottom = BoundaryCondition(Flux, τ₂₃_linear_drag))
 bbcs = HorizontallyPeriodicBCs(   top = BoundaryCondition(Value, 0), 
                                bottom = BoundaryCondition(Value, -N² * Lz))
 
-# b = f ∂z ψ, u = - ∂y ψ
 # Forcing functions and parameters for a linear geostrophic flow ψ = - α y (z + H), where
 # α is the geostrophic shear and horizontal buoyancy gradient.
 forcing_parameters = (α=α, f=f, H=Lz)
@@ -77,11 +64,7 @@ Fb_eady(i, j, k, grid, time, U, C, p) = @inbounds (- p.α * (grid.zC[k] + p.H) *
 # Turbulence closures: 
 closure = (ConstantAnisotropicDiffusivity(νh=0, κh=0, νv=κᵥ, κv=κᵥ),
            AnisotropicBiharmonicDiffusivity(νh=κ₄h, κh=κ₄h))
-           #TwoDimensionalLeith())
            
-# Form a prefix from chosen resolution, boundary condition, and closure name
-output_filename_prefix = string("eady_turb_Nh", Nh, "_Nz", Nz)
-
 #####
 ##### Instantiate the model
 #####
@@ -94,20 +77,22 @@ model = Model( grid = RegularCartesianGrid(size=(Nh, Nh, Nz), halo=(2, 2, 2),
            buoyancy = BuoyancyTracer(), tracers = :b,
             forcing = ModelForcing(u=Fu_eady, v=Fv_eady, w=Fw_eady, b=Fb_eady),
             closure = closure,
-boundary_conditions = BoundaryConditions(u=ubcs, v=vbcs, b=bbcs),
+boundary_conditions = BoundaryConditions(b=bbcs),
 # "parameters" is a NamedTuple of user-defined parameters that can be used in boundary condition and forcing functions.
-         parameters = merge(bc_parameters, forcing_parameters))
+         parameters = forcing_parameters)
 
 #####
 ##### Set initial conditions
 #####
 
-# A noise function, damped at the boundaries
-Ξ(z) = rand() * z/Lz * (z/Lz + 1)
+Ξ(z) = rand() * z/Lz * (z/Lz + 1) # noise function, damped at the boundaries
 
-# Buoyancy: linear stratification plus noise
+# Buoyancy initial condition: linear stratification plus noise
 b₀(x, y, z) = N² * z + 1e-2 * Ξ(z) * (N² * Lz + α * f * Lh)
+
+# Velocity initial condition: linear stratification plus noise
 u₀(x, y, z) = 1e-2 * α * Lz
+
 set!(model, u=u₀, v=u₀, b=b₀)
 
 #####
@@ -120,17 +105,9 @@ umax = FieldMaximum(abs, model.velocities.u)
 vmax = FieldMaximum(abs, model.velocities.v)
 wmax = FieldMaximum(abs, model.velocities.w)
 
-# Set up output. Here we output the velocity and buoyancy fields at intervals of one day.
-#=
-fields_to_output = merge(model.velocities, (b=model.tracers.b,))
-output_writer = JLD2OutputWriter(model, FieldOutputs(fields_to_output); 
-                                 interval=day, prefix=output_filename_prefix,
-                                 force=true, max_filesize=10GiB)
-=#
-
 # The TimeStepWizard manages the time-step adaptively, keeping the CFL close to a
 # desired value.
-wizard = TimeStepWizard(cfl=0.05, Δt=20.0, max_change=1.1, max_Δt=min(1/10f, σᵇ/10))
+wizard = TimeStepWizard(cfl=0.05, Δt=20.0, max_change=1.1, max_Δt=5minute)
 
 u, v, w = model.velocities
 ζ = Field(Face, Face, Cell, model.architecture, model.grid)
@@ -145,6 +122,8 @@ vertical_vorticity = Computation(∂x(v) - ∂y(u), ζ)
 #####
 ##### Time step the model forward
 #####
+
+# Plotting shenanigans
 
 using PyPlot, PyCall
 
@@ -167,8 +146,7 @@ xF_xy = repeat(reshape(model.grid.xF[1:end-1], nx, 1), 1, ny)
 yC_xy = repeat(reshape(model.grid.yC, 1, ny), nx, 1)
 yF_xy = repeat(reshape(model.grid.yF[1:end-1], 1, ny), nx, 1)
 
-# This time-stepping loop runs until end_time is reached. It prints a progress statement
-# every 100 iterations.
+# This time-stepping loop runs until end_time is reached.
 while model.clock.time < end_time
 
     ## Update the time step associated with `wizard`.
