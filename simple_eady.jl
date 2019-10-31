@@ -26,7 +26,7 @@ using Oceananigans: Face, Cell
  Δh = Lh / Nh     # [meters] horizontal grid spacing for diffusivity calculations
  Δz = Lz / Nz     # [meters] vertical grid spacing for diffusivity calculations
 @show κ₄h = Δh^4 / τᵏ   # [m⁴ s⁻¹] Biharmonic horizontal diffusivity
-@show  κᵥ = Δz^2 / 20τᵏ # [m² s⁻¹] Laplacian vertical diffusivity
+@show  κᵥ = Δz^2 / 100τᵏ # [m² s⁻¹] Laplacian vertical diffusivity
 
 @show N² = (Rᵈ * f / Lz)^2      # [s⁻²] Initial buoyancy gradient 
 @show  α = sqrt(N²) / (f * σᵇ)  # [s⁻¹] background shear
