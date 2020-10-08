@@ -12,10 +12,15 @@ using Oceananigans.Grids: x_domain, y_domain, z_domain # for nice domain limits
 
 pyplot() # pyplot backend is a bit nicer than GR
 
+Nx = 192
+Nz = 64
+
+prefix = @sprintf("eady_turbulence_Nh%d_Nz%d", Nx, Nz)
+
 ## Open the file with our data
- surface_file = jldopen("data/eady_turbulence_surface.jld2")
-middepth_file = jldopen("data/eady_turbulence_middepth.jld2")
-  bottom_file = jldopen("data/eady_turbulence_bottom.jld2")
+ surface_file = jldopen(prefix * "xy_surface.jld2")
+middepth_file = jldopen(prefix * "xy_middepth.jld2")
+  bottom_file = jldopen(prefix * "xy_bottom.jld2")
 
 Nx = surface_file["grid/Nx"]
 Ny = surface_file["grid/Ny"]
@@ -53,28 +58,28 @@ end
 
 @info "Making an animation from saved data..."
 
-anim = @animate for (i, iter) in enumerate(iterations)
+anim = @animate for (i, iter) in enumerate(iterations[1:553])
 
     ## Load 3D fields from file
     t = surface_file["timeseries/t/$iter"]
 
     surface_R = surface_file["timeseries/ζ/$iter"][:, :, 1] ./ f
-    surface_δ = surface_file["timeseries/δ/$iter"][:, :, 1]
+    surface_δ = surface_file["timeseries/δ/$iter"][:, :, 1] ./ f
 
     middepth_R = middepth_file["timeseries/ζ/$iter"][:, :, 1] ./ f
-    middepth_δ = middepth_file["timeseries/δ/$iter"][:, :, 1]
+    middepth_δ = middepth_file["timeseries/δ/$iter"][:, :, 1] ./ f
 
     bottom_R = bottom_file["timeseries/ζ/$iter"][:, :, 1] ./ f
-    bottom_δ = bottom_file["timeseries/δ/$iter"][:, :, 1]
+    bottom_δ = bottom_file["timeseries/δ/$iter"][:, :, 1] ./ f
 
-    Rlim = 0.5 * maximum(abs, surface_R) + 1e-9
-    δlim = 0.5 * maximum(abs, surface_δ) + 1e-9
+    Rlim = 2.0
+    δlim = 1.0
 
     Rlevels = nice_divergent_levels(surface_R, Rlim)
     δlevels = nice_divergent_levels(surface_δ, δlim)
 
-    @info @sprintf("Drawing frame %d from iteration %d: max(ζ̃ / f) = %.3f \n",
-                   i, iter, maximum(abs, surface_R))
+    @info @sprintf("Drawing frame %d from iteration %d: max(ζ̃ / f) = %.3f, max(δ / f) = %.3f \n",
+                   i, iter, maximum(abs, surface_R), maximum(abs, surface_δ))
 
     R_surface = contourf(xζ, yζ, surface_R';
                           color = :balance,
@@ -99,6 +104,7 @@ anim = @animate for (i, iter) in enumerate(iterations)
                          ylabel = "y (m)")
 
     R_bottom = contourf(xζ, yζ, bottom_R';
+                       colorbar = true,
                           color = :balance,
                     aspectratio = 1,
                          legend = false,
@@ -132,6 +138,7 @@ anim = @animate for (i, iter) in enumerate(iterations)
                          ylabel = "y (m)")
 
     δ_bottom = contourf(xδ, yδ, bottom_δ';
+                       colorbar = true,
                           color = :balance,
                     aspectratio = 1,
                          legend = false,
@@ -149,13 +156,11 @@ anim = @animate for (i, iter) in enumerate(iterations)
     ζ2 = @sprintf("bottom ζ/f(t=%s) (s⁻¹)", prettytime(t))
     δ2 = @sprintf("bottom δ(t=%s) (s⁻¹)", prettytime(t))
 
-    #plot(R_surface, R_middepth, R_bottom, δ_surface, δ_middepth, δ_bottom,
-    plot(R_surface, R_middepth, δ_surface, δ_middepth,
-           size = (1000, 1000),
+    plot(R_surface, R_middepth, R_bottom, δ_surface, δ_middepth, δ_bottom,
+           size = (2000, 1000),
            link = :x,
-         layout = (2, 2),
-          #title = [ζ0 ζ1 ζ2 δ0 δ1 δ2])
-          title = [ζ0 ζ1 δ0 δ1])
+         layout = (2, 3),
+          title = [ζ0 ζ1 ζ2 δ0 δ1 δ2])
 
     iter == iterations[end] && (close(surface_file); close(middepth_file); close(bottom_file))
 end
