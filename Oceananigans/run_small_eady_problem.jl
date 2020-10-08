@@ -9,20 +9,29 @@ using Oceananigans.Advection: WENO5
 using Oceananigans.Diagnostics: AdvectiveCFL
 using Oceananigans.OutputWriters: JLD2OutputWriter, FieldSlicer
 
-grid = RegularCartesianGrid(size=(128, 128, 64), x=(0, 4e6), y=(0, 4e6), z=(-4e3, 0))
+grid = RegularCartesianGrid(size=(128, 128, 64), x=(0, 1e6), y=(0, 1e6), z=(-1e3, 0))
 
-prefix = @sprintf("eady_turbulence_Nh%d_Nz%d", grid.Nx, grid.Nz)
+prefix = @sprintf("small_eady_turbulence_Nh%d_Nz%d", grid.Nx, grid.Nz)
 
 coriolis = FPlane(f=1e-4) # [s⁻¹]
                             
-background_parameters = ( α = 0.25 * coriolis.f, # s⁻¹, geostrophic shear
-                          f = coriolis.f,       # s⁻¹, Coriolis parameter
-                          N = 3.3e-3,           # s⁻¹, buoyancy frequency
-                         Lz = grid.Lz)          # m, ocean depth
+background_parameters = (       α = 0.25 * coriolis.f, # s⁻¹, geostrophic shear
+                                f = coriolis.f,        # s⁻¹, Coriolis parameter
+                           N_deep = sqrt(1e-6),        # s⁻¹, buoyancy frequency
+                           N_surf = sqrt(1e-5),        # s⁻¹, buoyancy frequency
+                          z_cline = -200,        # s⁻¹, buoyancy frequency
+                          h_cline = 50,        # s⁻¹, buoyancy frequency
+                               Lz = grid.Lz)           # m, ocean depth
+
+@inline step(z, c, w) = (tanh((z-c) / w) + 1) / 2
+@inline Bᴸ(z, N, Lz) = N^2 * (z + Lz)
+@inline B_thermocline(z, N_deep, N_surf, z_cline, h_cline, Lz) =
+    Bᴸ(z, N_deep, Lz) + (Bᴸ(z, N_surf, Lz) - Bᴸ(z, N_deep, Lz)) * step(z, z_cline, h_cline)
 
 ## Background fields are defined via functions of x, y, z, t, and optional parameters
 U(x, y, z, t, p) = + p.α * (z + p.Lz)
-B(x, y, z, t, p) = - p.α * p.f * y + p.N^2 * z
+B(x, y, z, t, p) = - p.α * p.f * y + B_thermocline(z, p.N_deep, p.N_surf, p.z_cline, p.h_cline, p.Lz)
+#B(x, y, z, t, p) = - p.α * p.f * y + p.N_deep^2 * z
 
 U_field = BackgroundField(U, parameters=background_parameters)
 B_field = BackgroundField(B, parameters=background_parameters)
@@ -85,7 +94,7 @@ model.velocities.v.data.parent .-= V̄
 ## background velocity.
 Ū = background_parameters.α * grid.Lz
 
-max_Δt = min(hour, grid.Δx / Ū, 0.5 * grid.Δx^4 / κ₄h, 0.5 * grid.Δz^2 / κ₂z)
+max_Δt = min(2hour, grid.Δx / Ū, 0.5 * grid.Δx^4 / κ₄h, 0.5 * grid.Δz^2 / κ₂z)
 
 cfl = 1.0
 cfl = cfl * min(cfl, drag_coefficient * grid.Δx / grid.Δz)

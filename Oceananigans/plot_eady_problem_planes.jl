@@ -12,15 +12,16 @@ using Oceananigans.Grids: x_domain, y_domain, z_domain # for nice domain limits
 
 pyplot() # pyplot backend is a bit nicer than GR
 
-Nx = 192
-Nz = 64
+Nx = 128
+Nz = 128
 
-prefix = @sprintf("eady_turbulence_Nh%d_Nz%d", Nx, Nz)
+#prefix = @sprintf("eady_turbulence_Nh%d_Nz%d", Nx, Nz)
+prefix = @sprintf("small_eady_turbulence_Nh%d_Nz%d", Nx, Nz)
 
 ## Open the file with our data
- surface_file = jldopen(prefix * "xy_surface.jld2")
-middepth_file = jldopen(prefix * "xy_middepth.jld2")
-  bottom_file = jldopen(prefix * "xy_bottom.jld2")
+ surface_file = jldopen(prefix * "_xy_surface.jld2")
+middepth_file = jldopen(prefix * "_xy_middepth.jld2")
+  bottom_file = jldopen(prefix * "_xy_bottom.jld2")
 
 Nx = surface_file["grid/Nx"]
 Ny = surface_file["grid/Ny"]
@@ -72,8 +73,8 @@ anim = @animate for (i, iter) in enumerate(iterations[1:553])
     bottom_R = bottom_file["timeseries/ζ/$iter"][:, :, 1] ./ f
     bottom_δ = bottom_file["timeseries/δ/$iter"][:, :, 1] ./ f
 
-    Rlim = 2.0
-    δlim = 1.0
+    Rlim = 0.8 * maximum(abs, surface_R) + 1e-9
+    δlim = 0.8 * maximum(abs, surface_δ) + 1e-9
 
     Rlevels = nice_divergent_levels(surface_R, Rlim)
     δlevels = nice_divergent_levels(surface_δ, δlim)
@@ -165,4 +166,4 @@ anim = @animate for (i, iter) in enumerate(iterations[1:553])
     iter == iterations[end] && (close(surface_file); close(middepth_file); close(bottom_file))
 end
 
-gif(anim, "eady_turbulence_planes.gif", fps = 8) # hide
+gif(anim, prefix * ".gif", fps = 8) # hide
