@@ -12,8 +12,8 @@ using Oceananigans.Grids: x_domain, y_domain, z_domain # for nice domain limits
 
 pyplot() # pyplot backend is a bit nicer than GR
 
-Nx = 128
-Nz = 64
+Nx = 256
+Nz = 128
 
 prefix = @sprintf("small_eady_problem_Nh%d_Nz%d", Nx, Nz)
 

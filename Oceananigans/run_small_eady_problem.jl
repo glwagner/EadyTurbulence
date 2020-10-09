@@ -9,7 +9,7 @@ using Oceananigans.Advection: WENO5
 using Oceananigans.Diagnostics: AdvectiveCFL
 using Oceananigans.OutputWriters: JLD2OutputWriter, FieldSlicer
 
-grid = RegularCartesianGrid(size=(256, 256, 128), x=(0, 1e6), y=(0, 1e6), z=(-1e3, 0))
+grid = RegularCartesianGrid(size=(256, 256, 128), x=(0, 5e5), y=(0, 5e5), z=(-1e3, 0))
 
 prefix = @sprintf("small_eady_problem_Nh%d_Nz%d", grid.Nx, grid.Nz)
 
@@ -19,8 +19,8 @@ background_parameters = (       α = 0.25 * coriolis.f, # s⁻¹, geostrophic sh
                                 f = coriolis.f,        # s⁻¹, Coriolis parameter
                            N_deep = sqrt(1e-6),        # s⁻¹, buoyancy frequency
                            N_surf = sqrt(1e-5),        # s⁻¹, buoyancy frequency
-                          z_cline = -200,        # s⁻¹, buoyancy frequency
-                          h_cline = 50,        # s⁻¹, buoyancy frequency
+                          z_cline = -200,              # m, thermocline height
+                          h_cline = 50,                # m, thermocline width
                                Lz = grid.Lz)           # m, ocean depth
 
 @inline step(z, c, w) = (tanh((z-c) / w) + 1) / 2
@@ -67,7 +67,7 @@ model = IncompressibleModel(
                 tracers = :b,
                buoyancy = BuoyancyTracer(),
       background_fields = (b=B_field, u=U_field),
-                closure = (Laplacian_vertical_diffusivity, biharmonic_horizontal_diffusivity),
+                closure = nothing, #(Laplacian_vertical_diffusivity, biharmonic_horizontal_diffusivity),
     boundary_conditions = (u=u_bcs, v=v_bcs)
 )
 
