@@ -2,3 +2,5 @@
 *.swp
 *.gif
 *.mp4
+*.out
+*.err

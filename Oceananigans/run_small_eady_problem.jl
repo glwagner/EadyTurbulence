@@ -9,9 +9,9 @@ using Oceananigans.Advection: WENO5
 using Oceananigans.Diagnostics: AdvectiveCFL
 using Oceananigans.OutputWriters: JLD2OutputWriter, FieldSlicer
 
-grid = RegularCartesianGrid(size=(128, 128, 64), x=(0, 1e6), y=(0, 1e6), z=(-1e3, 0))
+grid = RegularCartesianGrid(size=(256, 256, 128), x=(0, 1e6), y=(0, 1e6), z=(-1e3, 0))
 
-prefix = @sprintf("small_eady_turbulence_Nh%d_Nz%d", grid.Nx, grid.Nz)
+prefix = @sprintf("small_eady_problem_Nh%d_Nz%d", grid.Nx, grid.Nz)
 
 coriolis = FPlane(f=1e-4) # [s⁻¹]
                             
@@ -94,7 +94,7 @@ model.velocities.v.data.parent .-= V̄
 ## background velocity.
 Ū = background_parameters.α * grid.Lz
 
-max_Δt = min(2hour, grid.Δx / Ū, 0.5 * grid.Δx^4 / κ₄h, 0.5 * grid.Δz^2 / κ₂z)
+max_Δt = min(hour / 2, grid.Δx / Ū, 0.5 * grid.Δx^4 / κ₄h, 0.5 * grid.Δz^2 / κ₂z)
 
 cfl = 1.0
 cfl = cfl * min(cfl, drag_coefficient * grid.Δx / grid.Δz)
@@ -125,7 +125,7 @@ function (p::ProgressMessage)(sim)
     return nothing
 end
 
-simulation = Simulation(model, Δt = wizard, iteration_interval = 100,
+simulation = Simulation(model, Δt = wizard, iteration_interval = 10,
                                                      stop_time = 10 * 365day,
                                                       progress = progress)
 
@@ -137,12 +137,13 @@ b = model.tracers.b
 
 ## Eddy kinetic energy and buoyancy flux
 f = coriolis.f
-N = background_parameters.N
 
 eddy_kinetic_energy = @at (Cell, Cell, Cell)  (u^2 + v^2 + w^2) / 2  
 buoyancy_flux = @at (Cell, Cell, Cell)  v * b
 
 #=
+N = background_parameters.N
+
 ω₁ = - ∂z(v)
 ω₂ = ∂z(u)
 ω₃ = ∂x(v) - ∂y(u)
@@ -160,66 +161,87 @@ vb = ComputedField(buoyancy_flux)
 b² = ComputedField(b^2)
 ζ² = ComputedField(ζ^2)
 
-profile_e  = mean(e,     dims=(1, 2))
-profile_vb = mean(vb,    dims=(1, 2))
-profile_ζ² = mean(ζ²,    dims=(1, 2))
-profile_b² = mean(b²,    dims=(1, 2))
-profile_bz = mean(∂z(b), dims=(1, 2))
+horizontal_average_u  = mean(u,     dims=(1, 2))
+horizontal_average_v  = mean(v,     dims=(1, 2))
+horizontal_average_b  = mean(b,     dims=(1, 2))
+horizontal_average_e  = mean(e,     dims=(1, 2))
+horizontal_average_vb = mean(vb,    dims=(1, 2))
+horizontal_average_ζ² = mean(ζ²,    dims=(1, 2))
+horizontal_average_b² = mean(b²,    dims=(1, 2))
+horizontal_average_bz = mean(∂z(b), dims=(1, 2))
 
-volume_e  = mean(e,  dims=(1, 2, 3))
-volume_vb = mean(vb, dims=(1, 2, 3))
-volume_b² = mean(b², dims=(1, 2, 3))
-volume_ζ² = mean(ζ², dims=(1, 2, 3))
+horizontal_averages = (
+                       u  = horizontal_average_u,
+                       v  = horizontal_average_v,
+                       b  = horizontal_average_b,
+                       e  = horizontal_average_e,
+                       vb = horizontal_average_vb,
+                       ζ² = horizontal_average_ζ²,
+                       b² = horizontal_average_b²,
+                       bz = horizontal_average_bz
+                      )
+
+volume_average_e  = mean(e,  dims=(1, 2, 3))
+volume_average_vb = mean(vb, dims=(1, 2, 3))
+volume_average_b² = mean(b², dims=(1, 2, 3))
+volume_average_ζ² = mean(ζ², dims=(1, 2, 3))
+
+volume_averages = (
+                   e  = volume_average_e,
+                   vb = volume_average_vb,
+                   ζ² = volume_average_ζ²,
+                   b² = volume_average_b²
+                  )
 
 simulation.output_writers[:fields] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                      time_interval = 4day,
+                                                      time_interval = 30day,
                                                              prefix = prefix * "_fields",
                                                        max_filesize = 2GiB,
                                                               force = true)
 
 simulation.output_writers[:xy_surface] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                      time_interval = 24hour,
+                                                      time_interval = 84hour,
                                                              prefix = prefix * "_xy_surface",
                                                        field_slicer = FieldSlicer(k=grid.Nz),
                                                        max_filesize = 2GiB,
                                                               force = true)
 
 simulation.output_writers[:xy_middepth] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                        time_interval = 24hour,
+                                                        time_interval = 84hour,
                                                                prefix = prefix * "_xy_middepth",
                                                          field_slicer = FieldSlicer(k=round(Int, grid.Nz/2)),
                                                          max_filesize = 2GiB,
                                                                 force = true)
 
 simulation.output_writers[:xy_bottom] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                      time_interval = 24hour,
+                                                      time_interval = 84hour,
                                                              prefix = prefix * "_xy_bottom",
                                                        field_slicer = FieldSlicer(k=1),
                                                        max_filesize = 2GiB,
                                                               force = true)
 
 simulation.output_writers[:xz] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                        time_interval = 24hour,
+                                                        time_interval = 84hour,
                                                                prefix = prefix * "_xz",
                                                          field_slicer = FieldSlicer(j=1),
                                                          max_filesize = 2GiB,
                                                                 force = true)
 
 simulation.output_writers[:yz] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                        time_interval = 24hour,
+                                                        time_interval = 84hour,
                                                                prefix = prefix * "_yz",
                                                          field_slicer = FieldSlicer(i=1),
                                                          max_filesize = 2GiB,
                                                                 force = true)
 
-simulation.output_writers[:profiles] = JLD2OutputWriter(model, (e=profile_e, vb=profile_vb, ζ²=profile_ζ², b²=profile_b², bz=profile_bz),
-                                                        time_interval = 24hour,
-                                                               prefix = prefix * "_profiles",
-                                                         max_filesize = 2GiB,
-                                                                force = true)
+simulation.output_writers[:horizontal_averages] = JLD2OutputWriter(model, horizontal_averages,
+                                                                   time_interval = 84hour,
+                                                                          prefix = prefix * "_profiles",
+                                                                    max_filesize = 2GiB,
+                                                                           force = true)
 
-simulation.output_writers[:volume] = JLD2OutputWriter(model, (e=volume_e, vb=volume_vb, ζ²=volume_ζ², b²=volume_b²),
-                                                        time_interval = 24hour,
+simulation.output_writers[:volume_averages] = JLD2OutputWriter(model, volume_averages,
+                                                        time_interval = 84hour,
                                                                prefix = prefix * "_volume_mean",
                                                          max_filesize = 2GiB,
                                                                 force = true)
