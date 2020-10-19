@@ -85,7 +85,7 @@ u_bcs = UVelocityBoundaryConditions(grid, bottom = drag_bc_u)
 v_bcs = VVelocityBoundaryConditions(grid, bottom = drag_bc_v)
 
 κ₂z = 1e-4 # [m² s⁻¹] Laplacian vertical viscosity and diffusivity
-κ₄h = 1e-2 / day * grid.Δx^4 # [m⁴ s⁻¹] biharmonic horizontal viscosity and diffusivity
+κ₄h = 1e-1 / day * grid.Δx^4 # [m⁴ s⁻¹] biharmonic horizontal viscosity and diffusivity
 
 Laplacian_vertical_diffusivity = AnisotropicDiffusivity(νh=0, κh=0, νz=κ₂z, κz=κ₂z)
 biharmonic_horizontal_diffusivity = AnisotropicBiharmonicDiffusivity(νh=κ₄h, κh=κ₄h)
@@ -93,7 +93,7 @@ biharmonic_horizontal_diffusivity = AnisotropicBiharmonicDiffusivity(νh=κ₄h,
 # # Model instantiation
 
 model = IncompressibleModel(
-           architecture = CPU(),
+           architecture = GPU(),
                    grid = grid,
               advection = WENO5(),
             timestepper = :RungeKutta3,
