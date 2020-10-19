@@ -245,9 +245,10 @@ simulation.output_writers[:xy_surface] = JLD2OutputWriter(model, merge(model.vel
 k_subsurface = searchsortedfirst(znodes(Cell, grid), -200)
 
 simulation.output_writers[:xy_subsurface] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                      time_interval = save_interval_days * day,
-                                                             prefix = prefix * "_xy_subsurface",
-                                                       field_slicer = FieldSlicer(k=k_subsurface),
+                                                             time_interval = save_interval_days * day,
+                                                                    prefix = prefix * "_xy_subsurface",
+                                                              field_slicer = FieldSlicer(k=k_subsurface),
+                                                                     force = true)
 
 simulation.output_writers[:xy_middepth] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
                                                            time_interval = save_interval_days * day,
