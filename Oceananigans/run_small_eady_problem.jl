@@ -55,24 +55,16 @@ grid = RegularCartesianGrid(size=(Nh, Nh, Nz), x=(0, 1e6), y=(0, 1e6), z=(-1e3, 
 prefix = @sprintf("small_eady_problem_Nh%d_Nz%d_αf%.1e", grid.Nx, grid.Nz, α_f)
 
 coriolis = FPlane(f=1e-4) # [s⁻¹]
-                            
-background_parameters = (       α = α_f * coriolis.f, # s⁻¹, geostrophic shear
-                                f = coriolis.f,        # s⁻¹, Coriolis parameter
-                           N_deep = sqrt(1e-5),        # s⁻¹, buoyancy frequency
-                           N_surf = sqrt(1e-5),        # s⁻¹, buoyancy frequency
-                          z_cline = -200,              # m, thermocline height
-                          h_cline = 50,                # m, thermocline width
-                               Lz = grid.Lz)           # m, ocean depth
 
-@inline step(z, c, w) = (tanh((z-c) / w) + 1) / 2
-@inline Bᴸ(z, N, Lz) = N^2 * (z + Lz)
-@inline B_thermocline(z, N_deep, N_surf, z_cline, h_cline, Lz) =
-    Bᴸ(z, N_deep, Lz) + (Bᴸ(z, N_surf, Lz) - Bᴸ(z, N_deep, Lz)) * step(z, z_cline, h_cline)
+N² = 1e-5 # s⁻¹, buoyancy frequency
+                            
+background_parameters = (  α = α_f * coriolis.f, # s⁻¹, geostrophic shear
+                           f = coriolis.f,        # s⁻¹, Coriolis parameter
+                          Lz = grid.Lz)           # m, ocean depth
 
 ## Background fields are defined via functions of x, y, z, t, and optional parameters
 U(x, y, z, t, p) = + p.α * (z + p.Lz)
-#B(x, y, z, t, p) = - p.α * p.f * y + B_thermocline(z, p.N_deep, p.N_surf, p.z_cline, p.h_cline, p.Lz)
-B(x, y, z, t, p) = - p.α * p.f * y + p.N_deep^2 * z
+B(x, y, z, t, p) = - p.α * p.f * y
 
 U_field = BackgroundField(U, parameters=background_parameters)
 B_field = BackgroundField(B, parameters=background_parameters)
@@ -88,6 +80,7 @@ drag_coefficient = 1e-3
 drag_bc_u = BoundaryCondition(Flux, bottom_drag_u, discrete_form=true, parameters=drag_coefficient)
 drag_bc_v = BoundaryCondition(Flux, bottom_drag_v, discrete_form=true, parameters=drag_coefficient)
 
+b_bcs = TracerBoundaryConditions(grid, bottom=GradientBoundaryCondition(N²), top=GradientBoundaryCondition(N²))
 u_bcs = UVelocityBoundaryConditions(grid, bottom = drag_bc_u) 
 v_bcs = VVelocityBoundaryConditions(grid, bottom = drag_bc_v)
 
@@ -100,7 +93,7 @@ biharmonic_horizontal_diffusivity = AnisotropicBiharmonicDiffusivity(νh=κ₄h,
 # # Model instantiation
 
 model = IncompressibleModel(
-           architecture = GPU(),
+           architecture = CPU(),
                    grid = grid,
               advection = WENO5(),
             timestepper = :RungeKutta3,
@@ -121,7 +114,7 @@ B̃ = 1e-2 * background_parameters.α * coriolis.f
 
 uᵢ(x, y, z) = Ũ * Ξ(z)
 vᵢ(x, y, z) = Ũ * Ξ(z)
-bᵢ(x, y, z) = B̃ * Ξ(z)
+bᵢ(x, y, z) = N² * z + B̃ * Ξ(z)
 
 set!(model, u=uᵢ, v=vᵢ, b=bᵢ)
 
@@ -141,7 +134,6 @@ cfl = cfl * min(cfl, drag_coefficient * grid.Δx / grid.Δz)
 abs_max_Δt = grid.Nx >= 256 ? hour/3 : hour/2
 
 max_Δt = min(abs_max_Δt, cfl * grid.Δx / Ū, 0.5 * grid.Δx^4 / κ₄h, 0.5 * grid.Δz^2 / κ₂z)
-
 
 wizard = TimeStepWizard(cfl=cfl, Δt=0.01*max_Δt, max_change=1.1, max_Δt=max_Δt)
 
@@ -239,7 +231,6 @@ volume_averages = (
 
 save_interval_days = 2
 
-#=
 simulation.output_writers[:fields] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
                                                       time_interval = year,
                                                              prefix = prefix * "_fields",
@@ -250,6 +241,13 @@ simulation.output_writers[:xy_surface] = JLD2OutputWriter(model, merge(model.vel
                                                              prefix = prefix * "_xy_surface",
                                                        field_slicer = FieldSlicer(k=grid.Nz),
                                                               force = true)
+
+k_subsurface = searchsortedfirst(znodes(Cell, grid), -200)
+
+simulation.output_writers[:xy_subsurface] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
+                                                      time_interval = save_interval_days * day,
+                                                             prefix = prefix * "_xy_subsurface",
+                                                       field_slicer = FieldSlicer(k=k_subsurface),
 
 simulation.output_writers[:xy_middepth] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
                                                            time_interval = save_interval_days * day,
@@ -288,25 +286,22 @@ simulation.output_writers[:volume_averages] = JLD2OutputWriter(model, volume_ave
 # Press the big red button:
 
 run!(simulation)
-=#
 
 # # Visualizing Eady turbulence
 
 pyplot() # pyplot backend is a bit nicer than GR
 
 ## Open the file with our data
- surface_file = jldopen(prefix * "_xy_surface.jld2")
-middepth_file = jldopen(prefix * "_xy_middepth.jld2")
-  bottom_file = jldopen(prefix * "_xy_bottom.jld2")
+file = jldopen(prefix * "_xy_surface.jld2")
 
-f = surface_file["coriolis/f"]
+f = file["coriolis/f"]
 
 ## Coordinate arrays
 xζ, yζ, zζ = nodes((Face, Face, Cell), grid)
 xδ, yδ, zδ = nodes((Cell, Cell, Cell), grid)
 
 ## Extract a vector of iterations
-iterations = parse.(Int, keys(surface_file["timeseries/t"]))
+iterations = parse.(Int, keys(file["timeseries/t"]))
 
 # This utility is handy for calculating nice contour intervals:
 
@@ -328,112 +323,100 @@ end
 anim = @animate for (i, iter) in enumerate(iterations)
 
     ## Load 3D fields from file
-    t = surface_file["timeseries/t/$iter"]
+    t = file["timeseries/t/$iter"]
 
-    surface_R = surface_file["timeseries/ζ/$iter"][:, :, 1] ./ f
-    surface_δ = surface_file["timeseries/δ/$iter"][:, :, 1] ./ f
+    R = file["timeseries/ζ/$iter"][:, :, 1] ./ f
+    δ = file["timeseries/δ/$iter"][:, :, 1] ./ f
+    u = file["timeseries/u/$iter"][:, :, 1]
+    v = file["timeseries/v/$iter"][:, :, 1]
+    w = file["timeseries/w/$iter"][:, :, 1]
 
-    middepth_R = middepth_file["timeseries/ζ/$iter"][:, :, 1] ./ f
-    middepth_δ = middepth_file["timeseries/δ/$iter"][:, :, 1] ./ f
+    ũ = zeros(grid.Nx, grid.Ny)
+    ṽ = zeros(grid.Nx, grid.Ny)
 
-    bottom_R = bottom_file["timeseries/ζ/$iter"][:, :, 1] ./ f
-    bottom_δ = bottom_file["timeseries/δ/$iter"][:, :, 1] ./ f
+    @views ũ[1:end-1, :] = @. (u[1:end-1, :] + u[2:end, :]) / 2
+    @views ũ[end, :]     = @. (u[1, :]       + u[end, :])   / 2
 
-    Rlim = 0.8 * maximum(abs, surface_R) + 1e-9
-    δlim = 0.8 * maximum(abs, surface_δ) + 1e-9
+    @views ṽ[:, 1:end-1] = @. (v[:, 1:end-1] + v[:, 2:end]) / 2
+    @views ṽ[:, end]     = @. (v[:, 1]       + v[:, end])   / 2
 
-    surface_Rlevels = nice_divergent_levels(surface_R, Rlim)
-    surface_δlevels = nice_divergent_levels(surface_δ, δlim)
-    middepth_Rlevels = nice_divergent_levels(middepth_R, Rlim)
-    middepth_δlevels = nice_divergent_levels(middepth_δ, δlim)
-    bottom_Rlevels = nice_divergent_levels(bottom_R, Rlim)
-    bottom_δlevels = nice_divergent_levels(bottom_δ, δlim)
+    s = @. sqrt(ũ^2 + ṽ^2)
+
+    slim = 0.8 * maximum(abs, s) + 1e-9
+    wlim = 0.8 * maximum(abs, w) + 1e-9
+    Rlim = 0.8 * maximum(abs, R) + 1e-9
+    δlim = 0.8 * maximum(abs, δ) + 1e-9
+
+    wlevels = nice_divergent_levels(w, wlim)
+    Rlevels = nice_divergent_levels(R, Rlim)
+    δlevels = nice_divergent_levels(δ, δlim)
+
+    smax = maximum(abs, s) + 1e-9
+
+    slevels = vcat(range(0, stop=slim, length=30), [smax])
 
     @info @sprintf("Drawing frame %d from iteration %d: max(ζ̃ / f) = %.3f, max(δ / f) = %.3f \n",
-                   i, iter, maximum(abs, surface_R), maximum(abs, surface_δ))
+                   i, iter, maximum(abs, R), maximum(abs, δ))
 
-    R_surface = contourf(xζ, yζ, surface_R';
-                          color = :balance,
-                    aspectratio = 1,
-                         legend = false,
-                          clims = (-Rlim, Rlim),
-                         levels = surface_Rlevels,
-                          xlims = (0, grid.Lx),
-                          ylims = (0, grid.Lx),
-                         xlabel = "x (m)",
-                         ylabel = "y (m)")
+    R_plot = contourf(xζ, yζ, R';
+                         colorbar = true,
+                            color = :balance,
+                      aspectratio = 1,
+                           legend = false,
+                            clims = (-Rlim, Rlim),
+                           levels = Rlevels,
+                            xlims = (0, grid.Lx),
+                            ylims = (0, grid.Lx),
+                           xlabel = "x (m)",
+                           ylabel = "y (m)")
 
-    R_middepth = contourf(xζ, yζ, middepth_R';
-                          color = :balance,
-                    aspectratio = 1,
-                         legend = false,
-                          clims = (-Rlim, Rlim),
-                         levels = middepth_Rlevels,
-                          xlims = (0, grid.Lx),
-                          ylims = (0, grid.Lx),
-                         xlabel = "x (m)",
-                         ylabel = "y (m)")
+    δ_plot = contourf(xδ, yδ, δ';
+                         colorbar = true,
+                            color = :balance,
+                      aspectratio = 1,
+                           legend = false,
+                            clims = (-δlim, δlim),
+                           levels = δlevels,
+                            xlims = (0, grid.Lx),
+                            ylims = (0, grid.Lx),
+                           xlabel = "x (m)",
+                           ylabel = "y (m)")
 
-    R_bottom = contourf(xζ, yζ, bottom_R';
-                       colorbar = true,
-                          color = :balance,
-                    aspectratio = 1,
-                         legend = false,
-                          clims = (-Rlim, Rlim),
-                         levels = bottom_Rlevels,
-                          xlims = (0, grid.Lx),
-                          ylims = (0, grid.Lx),
-                         xlabel = "x (m)",
-                         ylabel = "y (m)")
+    w_plot = contourf(xδ, yδ, w';
+                         colorbar = true,
+                            color = :balance,
+                      aspectratio = 1,
+                           legend = false,
+                            clims = (-wlim, wlim),
+                           levels = wlevels,
+                            xlims = (0, grid.Lx),
+                            ylims = (0, grid.Lx),
+                           xlabel = "x (m)",
+                           ylabel = "y (m)")
 
-    δ_surface = contourf(xδ, yδ, surface_δ';
-                          color = :balance,
-                    aspectratio = 1,
-                         legend = false,
-                          clims = (-δlim, δlim),
-                         levels = surface_δlevels,
-                          xlims = (0, grid.Lx),
-                          ylims = (0, grid.Lx),
-                         xlabel = "x (m)",
-                         ylabel = "y (m)")
+    s_plot = contourf(xδ, yδ, s';
+                         colorbar = true,
+                            color = :thermal,
+                      aspectratio = 1,
+                           legend = false,
+                            clims = (0, slim),
+                           levels = slevels,
+                            xlims = (0, grid.Lx),
+                            ylims = (0, grid.Lx),
+                           xlabel = "x (m)",
+                           ylabel = "y (m)")
 
-    δ_middepth = contourf(xδ, yδ, middepth_δ';
-                          color = :balance,
-                    aspectratio = 1,
-                         legend = false,
-                          clims = (-δlim, δlim),
-                         levels = middepth_δlevels,
-                          xlims = (0, grid.Lx),
-                          ylims = (0, grid.Lx),
-                         xlabel = "x (m)",
-                         ylabel = "y (m)")
+    ζ_title = @sprintf("ζ(z=0, t=%s) / f", prettytime(t))
+    δ_title = @sprintf("δ(z=0, t=%s) / f ", prettytime(t))
+    w_title = @sprintf("w(z=0, t=%s) (m s⁻¹)", prettytime(t))
+    s_title = @sprintf("\$ \\sqrt{u^2 + v^2} \\, |_{z=0, t=%s} \$ (m s⁻¹)", prettytime(t))
 
-    δ_bottom = contourf(xδ, yδ, bottom_δ';
-                       colorbar = true,
-                          color = :balance,
-                    aspectratio = 1,
-                         legend = false,
-                          clims = (-δlim, δlim),
-                         levels = bottom_δlevels,
-                          xlims = (0, grid.Lx),
-                          ylims = (0, grid.Lx),
-                         xlabel = "x (m)",
-                         ylabel = "y (m)")
+    plot(R_plot, δ_plot, w_plot, s_plot,
+           size = (1200, 1000),
+         layout = (2, 2),
+          title = [ζ_title δ_title w_title s_title])
 
-    ζ0 = @sprintf("surface ζ/f(t=%s) (s⁻¹)", prettytime(t))
-    δ0 = @sprintf("surface δ(t=%s) (s⁻¹)", prettytime(t))
-    ζ1 = @sprintf("middepth ζ/f(t=%s) (s⁻¹)", prettytime(t))
-    δ1 = @sprintf("middepth  δ(t=%s) (s⁻¹)", prettytime(t))
-    ζ2 = @sprintf("bottom ζ/f(t=%s) (s⁻¹)", prettytime(t))
-    δ2 = @sprintf("bottom δ(t=%s) (s⁻¹)", prettytime(t))
-
-    plot(R_surface, R_middepth, R_bottom, δ_surface, δ_middepth, δ_bottom,
-           size = (2000, 1000),
-           link = :x,
-         layout = (2, 3),
-          title = [ζ0 ζ1 ζ2 δ0 δ1 δ2])
-
-    iter == iterations[end] && (close(surface_file); close(middepth_file); close(bottom_file))
+    iter == iterations[end] && close(file)
 end
 
 gif(anim, prefix * ".gif", fps = 8) # hide
