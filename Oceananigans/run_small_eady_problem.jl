@@ -1,23 +1,64 @@
+using JLD2
+using Plots
 using Printf
 using Statistics
+using ArgParse
 using Oceananigans
 using Oceananigans.Grids
 using Oceananigans.AbstractOperations
 using Oceananigans.Fields: ComputedField, BackgroundField
-using Oceananigans.Utils: minute, hour, day, GiB
+using Oceananigans.Utils: minute, hour, day, GiB, prettytime
 using Oceananigans.Advection: WENO5
 using Oceananigans.Diagnostics: AdvectiveCFL
 using Oceananigans.OutputWriters: JLD2OutputWriter, FieldSlicer
+using Oceananigans.Grids: x_domain, y_domain, z_domain # for nice domain limits
 
-grid = RegularCartesianGrid(size=(256, 256, 128), x=(0, 5e5), y=(0, 5e5), z=(-1e3, 0))
+"Returns a dictionary of command line arguments."
+function parse_command_line_arguments()
+    settings = ArgParseSettings()
 
-prefix = @sprintf("small_eady_problem_Nh%d_Nz%d", grid.Nx, grid.Nz)
+    @add_arg_table! settings begin
+        "--Nh"
+            help = "The number of grid points in x, y."
+            default = 32
+            arg_type = Int
+
+        "--Nz"
+            help = "The number of grid points in z."
+            default = 32
+            arg_type = Int
+
+        "--geostrophic-shear"
+            help = """The geostrophic shear non-dimensionalized by f."""
+            default = 1.0
+            arg_type = Float64
+
+        "--years"
+            help = """The length of the simulation in years."""
+            default = 1.0
+            arg_type = Float64
+    end
+
+    return parse_args(settings)
+end
+
+args = parse_command_line_arguments()
+
+Nh = args["Nh"]
+Nz = args["Nz"]
+α_f = args["geostrophic-shear"]
+stop_years = args["years"]
+year = 365day
+
+grid = RegularCartesianGrid(size=(Nh, Nh, Nz), x=(0, 1e6), y=(0, 1e6), z=(-1e3, 0))
+
+prefix = @sprintf("small_eady_problem_Nh%d_Nz%d_αf%.1e", grid.Nx, grid.Nz, α_f)
 
 coriolis = FPlane(f=1e-4) # [s⁻¹]
                             
-background_parameters = (       α = 0.25 * coriolis.f, # s⁻¹, geostrophic shear
+background_parameters = (       α = α_f * coriolis.f, # s⁻¹, geostrophic shear
                                 f = coriolis.f,        # s⁻¹, Coriolis parameter
-                           N_deep = sqrt(1e-6),        # s⁻¹, buoyancy frequency
+                           N_deep = sqrt(1e-5),        # s⁻¹, buoyancy frequency
                            N_surf = sqrt(1e-5),        # s⁻¹, buoyancy frequency
                           z_cline = -200,              # m, thermocline height
                           h_cline = 50,                # m, thermocline width
@@ -30,8 +71,8 @@ background_parameters = (       α = 0.25 * coriolis.f, # s⁻¹, geostrophic sh
 
 ## Background fields are defined via functions of x, y, z, t, and optional parameters
 U(x, y, z, t, p) = + p.α * (z + p.Lz)
-B(x, y, z, t, p) = - p.α * p.f * y + B_thermocline(z, p.N_deep, p.N_surf, p.z_cline, p.h_cline, p.Lz)
-#B(x, y, z, t, p) = - p.α * p.f * y + p.N_deep^2 * z
+#B(x, y, z, t, p) = - p.α * p.f * y + B_thermocline(z, p.N_deep, p.N_surf, p.z_cline, p.h_cline, p.Lz)
+B(x, y, z, t, p) = - p.α * p.f * y + p.N_deep^2 * z
 
 U_field = BackgroundField(U, parameters=background_parameters)
 B_field = BackgroundField(B, parameters=background_parameters)
@@ -67,7 +108,7 @@ model = IncompressibleModel(
                 tracers = :b,
                buoyancy = BuoyancyTracer(),
       background_fields = (b=B_field, u=U_field),
-                closure = nothing, #(Laplacian_vertical_diffusivity, biharmonic_horizontal_diffusivity),
+                closure = (Laplacian_vertical_diffusivity, biharmonic_horizontal_diffusivity),
     boundary_conditions = (u=u_bcs, v=v_bcs)
 )
 
@@ -94,12 +135,15 @@ model.velocities.v.data.parent .-= V̄
 ## background velocity.
 Ū = background_parameters.α * grid.Lz
 
-max_Δt = min(hour / 2, grid.Δx / Ū, 0.5 * grid.Δx^4 / κ₄h, 0.5 * grid.Δz^2 / κ₂z)
-
 cfl = 1.0
 cfl = cfl * min(cfl, drag_coefficient * grid.Δx / grid.Δz)
 
-wizard = TimeStepWizard(cfl=cfl, Δt=0.1*max_Δt, max_change=1.1, max_Δt=max_Δt)
+abs_max_Δt = grid.Nx >= 256 ? hour/3 : hour/2
+
+max_Δt = min(abs_max_Δt, cfl * grid.Δx / Ū, 0.5 * grid.Δx^4 / κ₄h, 0.5 * grid.Δz^2 / κ₂z)
+
+
+wizard = TimeStepWizard(cfl=cfl, Δt=0.01*max_Δt, max_change=1.1, max_Δt=max_Δt)
 
 CFL = AdvectiveCFL(wizard)
 
@@ -126,7 +170,7 @@ function (p::ProgressMessage)(sim)
 end
 
 simulation = Simulation(model, Δt = wizard, iteration_interval = 10,
-                                                     stop_time = 10 * 365day,
+                                                     stop_time = stop_years * year,
                                                       progress = progress)
 
 u, v, w = model.velocities # unpack velocity `Field`s
@@ -193,59 +237,203 @@ volume_averages = (
                    b² = volume_average_b²
                   )
 
+save_interval_days = 2
+
+#=
 simulation.output_writers[:fields] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                      time_interval = 30day,
+                                                      time_interval = year,
                                                              prefix = prefix * "_fields",
-                                                       max_filesize = 2GiB,
                                                               force = true)
 
 simulation.output_writers[:xy_surface] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                      time_interval = 84hour,
+                                                      time_interval = save_interval_days * day,
                                                              prefix = prefix * "_xy_surface",
                                                        field_slicer = FieldSlicer(k=grid.Nz),
-                                                       max_filesize = 2GiB,
                                                               force = true)
 
 simulation.output_writers[:xy_middepth] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                        time_interval = 84hour,
-                                                               prefix = prefix * "_xy_middepth",
-                                                         field_slicer = FieldSlicer(k=round(Int, grid.Nz/2)),
-                                                         max_filesize = 2GiB,
-                                                                force = true)
+                                                           time_interval = save_interval_days * day,
+                                                                  prefix = prefix * "_xy_middepth",
+                                                            field_slicer = FieldSlicer(k=round(Int, grid.Nz/2)),
+                                                                   force = true)
 
 simulation.output_writers[:xy_bottom] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                      time_interval = 84hour,
-                                                             prefix = prefix * "_xy_bottom",
-                                                       field_slicer = FieldSlicer(k=1),
-                                                       max_filesize = 2GiB,
-                                                              force = true)
+                                                         time_interval = save_interval_days * day,
+                                                                prefix = prefix * "_xy_bottom",
+                                                          field_slicer = FieldSlicer(k=1),
+                                                                 force = true)
 
 simulation.output_writers[:xz] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                        time_interval = 84hour,
-                                                               prefix = prefix * "_xz",
-                                                         field_slicer = FieldSlicer(j=1),
-                                                         max_filesize = 2GiB,
-                                                                force = true)
+                                                  time_interval = save_interval_days * day,
+                                                         prefix = prefix * "_xz",
+                                                   field_slicer = FieldSlicer(j=1),
+                                                          force = true)
 
 simulation.output_writers[:yz] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                        time_interval = 84hour,
+                                                  time_interval = save_interval_days * day,
                                                                prefix = prefix * "_yz",
                                                          field_slicer = FieldSlicer(i=1),
-                                                         max_filesize = 2GiB,
                                                                 force = true)
 
 simulation.output_writers[:horizontal_averages] = JLD2OutputWriter(model, horizontal_averages,
-                                                                   time_interval = 84hour,
+                                                                   time_interval = save_interval_days * day,
                                                                           prefix = prefix * "_profiles",
-                                                                    max_filesize = 2GiB,
                                                                            force = true)
 
 simulation.output_writers[:volume_averages] = JLD2OutputWriter(model, volume_averages,
-                                                        time_interval = 84hour,
-                                                               prefix = prefix * "_volume_mean",
-                                                         max_filesize = 2GiB,
-                                                                force = true)
+                                                               time_interval = save_interval_days * day,
+                                                                      prefix = prefix * "_volume_mean",
+                                                                       force = true)
 
 # Press the big red button:
 
 run!(simulation)
+=#
+
+# # Visualizing Eady turbulence
+
+pyplot() # pyplot backend is a bit nicer than GR
+
+## Open the file with our data
+ surface_file = jldopen(prefix * "_xy_surface.jld2")
+middepth_file = jldopen(prefix * "_xy_middepth.jld2")
+  bottom_file = jldopen(prefix * "_xy_bottom.jld2")
+
+f = surface_file["coriolis/f"]
+
+## Coordinate arrays
+xζ, yζ, zζ = nodes((Face, Face, Cell), grid)
+xδ, yδ, zδ = nodes((Cell, Cell, Cell), grid)
+
+## Extract a vector of iterations
+iterations = parse.(Int, keys(surface_file["timeseries/t"]))
+
+# This utility is handy for calculating nice contour intervals:
+
+function nice_divergent_levels(c, clim, nlevels=30)
+    levels = range(-clim, stop=clim, length=10)
+
+    cmax = maximum(abs, c)
+    if clim < cmax # add levels on either end
+        levels = vcat([-cmax], range(-clim, stop=clim, length=nlevels), [cmax])
+    end
+
+    return levels
+end
+
+# Now we're ready to animate.
+
+@info "Making an animation from saved data..."
+
+anim = @animate for (i, iter) in enumerate(iterations)
+
+    ## Load 3D fields from file
+    t = surface_file["timeseries/t/$iter"]
+
+    surface_R = surface_file["timeseries/ζ/$iter"][:, :, 1] ./ f
+    surface_δ = surface_file["timeseries/δ/$iter"][:, :, 1] ./ f
+
+    middepth_R = middepth_file["timeseries/ζ/$iter"][:, :, 1] ./ f
+    middepth_δ = middepth_file["timeseries/δ/$iter"][:, :, 1] ./ f
+
+    bottom_R = bottom_file["timeseries/ζ/$iter"][:, :, 1] ./ f
+    bottom_δ = bottom_file["timeseries/δ/$iter"][:, :, 1] ./ f
+
+    Rlim = 0.8 * maximum(abs, surface_R) + 1e-9
+    δlim = 0.8 * maximum(abs, surface_δ) + 1e-9
+
+    surface_Rlevels = nice_divergent_levels(surface_R, Rlim)
+    surface_δlevels = nice_divergent_levels(surface_δ, δlim)
+    middepth_Rlevels = nice_divergent_levels(middepth_R, Rlim)
+    middepth_δlevels = nice_divergent_levels(middepth_δ, δlim)
+    bottom_Rlevels = nice_divergent_levels(bottom_R, Rlim)
+    bottom_δlevels = nice_divergent_levels(bottom_δ, δlim)
+
+    @info @sprintf("Drawing frame %d from iteration %d: max(ζ̃ / f) = %.3f, max(δ / f) = %.3f \n",
+                   i, iter, maximum(abs, surface_R), maximum(abs, surface_δ))
+
+    R_surface = contourf(xζ, yζ, surface_R';
+                          color = :balance,
+                    aspectratio = 1,
+                         legend = false,
+                          clims = (-Rlim, Rlim),
+                         levels = surface_Rlevels,
+                          xlims = (0, grid.Lx),
+                          ylims = (0, grid.Lx),
+                         xlabel = "x (m)",
+                         ylabel = "y (m)")
+
+    R_middepth = contourf(xζ, yζ, middepth_R';
+                          color = :balance,
+                    aspectratio = 1,
+                         legend = false,
+                          clims = (-Rlim, Rlim),
+                         levels = middepth_Rlevels,
+                          xlims = (0, grid.Lx),
+                          ylims = (0, grid.Lx),
+                         xlabel = "x (m)",
+                         ylabel = "y (m)")
+
+    R_bottom = contourf(xζ, yζ, bottom_R';
+                       colorbar = true,
+                          color = :balance,
+                    aspectratio = 1,
+                         legend = false,
+                          clims = (-Rlim, Rlim),
+                         levels = bottom_Rlevels,
+                          xlims = (0, grid.Lx),
+                          ylims = (0, grid.Lx),
+                         xlabel = "x (m)",
+                         ylabel = "y (m)")
+
+    δ_surface = contourf(xδ, yδ, surface_δ';
+                          color = :balance,
+                    aspectratio = 1,
+                         legend = false,
+                          clims = (-δlim, δlim),
+                         levels = surface_δlevels,
+                          xlims = (0, grid.Lx),
+                          ylims = (0, grid.Lx),
+                         xlabel = "x (m)",
+                         ylabel = "y (m)")
+
+    δ_middepth = contourf(xδ, yδ, middepth_δ';
+                          color = :balance,
+                    aspectratio = 1,
+                         legend = false,
+                          clims = (-δlim, δlim),
+                         levels = middepth_δlevels,
+                          xlims = (0, grid.Lx),
+                          ylims = (0, grid.Lx),
+                         xlabel = "x (m)",
+                         ylabel = "y (m)")
+
+    δ_bottom = contourf(xδ, yδ, bottom_δ';
+                       colorbar = true,
+                          color = :balance,
+                    aspectratio = 1,
+                         legend = false,
+                          clims = (-δlim, δlim),
+                         levels = bottom_δlevels,
+                          xlims = (0, grid.Lx),
+                          ylims = (0, grid.Lx),
+                         xlabel = "x (m)",
+                         ylabel = "y (m)")
+
+    ζ0 = @sprintf("surface ζ/f(t=%s) (s⁻¹)", prettytime(t))
+    δ0 = @sprintf("surface δ(t=%s) (s⁻¹)", prettytime(t))
+    ζ1 = @sprintf("middepth ζ/f(t=%s) (s⁻¹)", prettytime(t))
+    δ1 = @sprintf("middepth  δ(t=%s) (s⁻¹)", prettytime(t))
+    ζ2 = @sprintf("bottom ζ/f(t=%s) (s⁻¹)", prettytime(t))
+    δ2 = @sprintf("bottom δ(t=%s) (s⁻¹)", prettytime(t))
+
+    plot(R_surface, R_middepth, R_bottom, δ_surface, δ_middepth, δ_bottom,
+           size = (2000, 1000),
+           link = :x,
+         layout = (2, 3),
+          title = [ζ0 ζ1 ζ2 δ0 δ1 δ2])
+
+    iter == iterations[end] && (close(surface_file); close(middepth_file); close(bottom_file))
+end
+
+gif(anim, prefix * ".gif", fps = 8) # hide

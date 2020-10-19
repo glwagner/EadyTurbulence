@@ -20,10 +20,13 @@ module load cuda/10.1.243
 module load openmpi/3.1.4-pmi-cuda
 module load py-matplotlib/3.1.1
 
-cd /home/glwagner/EadyTurbulence/Oceananigans
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
-# CUDA_VISIBLE_DEVICES=0 unbuffer julia --color=yes --project three_layer_constant_fluxes.jl -Nh 256 -Nz 256 --buoyancy-flux 1e-8 --momentum-flux 0
+cd $DIR/../Oceananigans/
 
-unbuffer julia --color=yes --project run_small_eady_problem.jl
+#CUDA_VISIBLE_DEVICES=0 unbuffer julia --project run_small_eady_problem.jl --Nh 192 --Nz 64 --geostrophic-shear 0.25 --years 4.0 2>&1 | tee low_res.out &
+CUDA_VISIBLE_DEVICES=1 unbuffer julia --project run_small_eady_problem.jl --Nh 256 --Nz 64 --geostrophic-shear 0.25 --years 4.0 2>&1 | tee med_res_1.out &
+CUDA_VISIBLE_DEVICES=2 unbuffer julia --project run_small_eady_problem.jl --Nh 256 --Nz 96 --geostrophic-shear 0.25 --years 4.0 2>&1 | tee med_res_2.out &
+CUDA_VISIBLE_DEVICES=3 unbuffer julia --project run_small_eady_problem.jl --Nh 192 --Nz 64 --geostrophic-shear 0.10 --years 10.0 2>&1 | tee weak_low_res.out
 
-unbuffer julia --color=yes --project plot_small_eady_problem.jl
+sleep 42480 # sleep for 11.8 hours
