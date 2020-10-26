@@ -284,6 +284,7 @@ volume_vb = mean(vb, dims=(1, 2, 3))
 volume_b² = mean(b², dims=(1, 2, 3))
 volume_ζ² = mean(ζ², dims=(1, 2, 3))
 
+#=
 pickup = false
 fast_output_interval = floor(Int, stop_time/200)
 force = pickup ? false : true
@@ -350,6 +351,7 @@ simulation.output_writers[:volume] =
 #####
 
 run!(simulation, pickup=pickup)
+=#
 
 #####
 ##### Visualizing Eady turbulence
@@ -384,7 +386,7 @@ function divergent_levels(c, clim, nlevels=31)
     return levels
 end
 
-normalize(ϕ) = ϕ
+normalize_timeseries(ϕ) = ϕ / ϕ[end]
 
 normalize_profile(ϕ) = ϕ ./ maximum(abs, ϕ)
 
@@ -422,18 +424,20 @@ anim = @animate for (j, iter) in enumerate(iterations[10:10:end])
     bottom_ζ_plot  = contourf(xζ, yζ, bottom_ζ';  clims=(-ζlim, ζlim), levels=ζlevels, kwargs...)
     bottom_w_plot  = contourf(xw, yw, bottom_w';  clims=(-wlim, wlim), levels=wlevels, kwargs...)
 
-    volume_mean_plot = plot(time, normalize(mean_e);
+    volume_mean_plot = plot(time, normalize_timeseries(mean_e);
                             linewidth=2, label="⟨e⟩", xlabel="time", ylabel="Volume mean")
 
-    plot!(volume_mean_plot, time, normalize(mean_vb); linewidth=2, label="⟨vb⟩")
-    plot!(volume_mean_plot, time, normalize(mean_ζ²); linewidth=2, label="⟨ζ²⟩")
-    plot!(volume_mean_plot, time, normalize(mean_b²); linewidth=2, label="⟨b²⟩")
-    plot!(volume_mean_plot, [1, 1] .* time[i], [0, 1]; linewidth=2, alpha=0.4, label=nothing)
+    plot!(volume_mean_plot, time, normalize_timeseries(mean_vb); linewidth=2, label="⟨vb⟩")
+    plot!(volume_mean_plot, time, normalize_timeseries(mean_ζ²); linewidth=2, label="⟨ζ²⟩")
+    plot!(volume_mean_plot, time, normalize_timeseries(mean_b²); linewidth=2, label="⟨b²⟩")
+    plot!(volume_mean_plot, [1, 1] .* time[i], [0, 1]; linewidth=2, alpha=0.4, label=nothing,
+         legend=:topleft)
 
-    profiles_plot = plot(zc, normalize_profile(profile_e))
-    plot!(profiles_plot, zc, normalize_profile(profile_vb))
-    plot!(profiles_plot, zc, normalize_profile(profile_ζ²))
-    plot!(profiles_plot, zc, normalize_profile(profile_b²))
+    profiles_plot = plot( normalize_profile(profile_e), zc, label="\$ \\frac{1}{A} \\iint e \\, \\mathrm{d} A \$", xlims=(0, 1))
+    plot!(profiles_plot, normalize_profile(profile_vb), zc, label="\$ \\frac{1}{A} \\iint vb \\, \\mathrm{d} A \$")
+    plot!(profiles_plot, normalize_profile(profile_ζ²), zc, label="\$ \\frac{1}{A} \\iint \\zeta^2 \\, \\mathrm{d} A \$")
+    plot!(profiles_plot, normalize_profile(profile_b²), zc, label="\$ \\frac{1}{A} \\iint b^2 \\, \\mathrm{d} A \$",
+         legend=:topleft)
               
     surface_ζ_title = @sprintf("ζ(z=0, t=%.3e)", t)
     bottom_ζ_title = @sprintf("ζ(z=-Lz, t=%.3e)", t)
@@ -453,4 +457,4 @@ anim = @animate for (j, iter) in enumerate(iterations[10:10:end])
     end
 end
 
-gif(anim, prefix * ".gif", fps = 8) # hide
+gif(anim, prefix * ".gif", fps = 2) # hide
