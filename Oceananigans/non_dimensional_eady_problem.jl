@@ -288,63 +288,31 @@ volume_ζ² = mean(ζ², dims=(1, 2, 3))
 pickup = false
 fast_output_interval = floor(Int, stop_time/200)
 force = pickup ? false : true
+data_directory = joinpath("data", prefix)
+!isdir(data_directory) && mkdir(data_directory)
+
+outputs = merge(model.velocities, model.tracers, (ζ=ζ, δ=δ))
+
+kwargs = (schedule = TimeInterval(fast_output_interval), dir = data_directory, max_filesize = 2GiB, force = force)
 
 simulation.output_writers[:checkpointer] =
-    Checkpointer(model, schedule=TimeInterval(floor(Int, stop_time/10)), prefix = prefix * "_checkpointer")
+    Checkpointer(model, schedule=TimeInterval(floor(Int, stop_time/10)), prefix=prefix * "_checkpointer", dir=data_directory)
 
-simulation.output_writers[:xy_surface] =
-    JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                     schedule = TimeInterval(fast_output_interval),
-                     prefix = prefix * "_xy_surface",
-                     field_slicer = FieldSlicer(k=grid.Nz),
-                     max_filesize = 2GiB,
-                     force = force)
-
-simulation.output_writers[:xy_bottom] =
-    JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                     schedule = TimeInterval(fast_output_interval),
-                     prefix = prefix * "_xy_bottom",
-                     field_slicer = FieldSlicer(k=1),
-                     max_filesize = 2GiB,
-                     force = force)
-
-simulation.output_writers[:xy_near_bottom] =
-    JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                     schedule = TimeInterval(fast_output_interval),
-                     prefix = prefix * "_xy_near_bottom",
-                     field_slicer = FieldSlicer(k=2),
-                     max_filesize = 2GiB,
-                     force = force)
-
-simulation.output_writers[:xz] =
-    JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                     schedule = TimeInterval(fast_output_interval),
-                     prefix = prefix * "_xz",
-                     field_slicer = FieldSlicer(j=1),
-                     max_filesize = 2GiB,
-                     force = force)
-
-simulation.output_writers[:yz] =
-    JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                     schedule = TimeInterval(fast_output_interval),
-                     prefix = prefix * "_yz",
-                     field_slicer = FieldSlicer(i=1),
-                     max_filesize = 2GiB,
-                     force = force)
-
+simulation.output_writers[:xy_surface]     = JLD2OutputWriter(model, outputs; prefix=prefix*"_xy_surface",     field_slicer=FieldSlicer(k=grid.Nz), kwargs...)
+simulation.output_writers[:xy_bottom]      = JLD2OutputWriter(model, outputs; prefix=prefix*"_xy_bottom",      field_slicer=FieldSlicer(k=1),       kwargs...)
+simulation.output_writers[:xy_near_bottom] = JLD2OutputWriter(model, outputs; prefix=prefix*"_xy_near_bottom", field_slicer=FieldSlicer(k=2),       kwargs...)
+simulation.output_writers[:xz]             = JLD2OutputWriter(model, outputs; prefix=prefix*"_xz",             field_slicer=FieldSlicer(j=1),       kwargs...)
+simulation.output_writers[:yz]             = JLD2OutputWriter(model, outputs; prefix=prefix*"_xy",             field_slicer=FieldSlicer(i=1),       kwargs...)
+    
 simulation.output_writers[:profiles] =
-    JLD2OutputWriter(model, (e=profile_e, vb=profile_vb, ζ²=profile_ζ², b²=profile_b², bz=profile_bz),
-                     schedule = TimeInterval(fast_output_interval),
-                     prefix = prefix * "_profiles",
-                     max_filesize = 2GiB,
-                     force = force)
-
+    JLD2OutputWriter(model, (e=profile_e, vb=profile_vb, ζ²=profile_ζ², b²=profile_b², bz=profile_bz);
+                     schedule = AveragedTimeInterval(fast_output_interval, window=1000),
+                     prefix = prefix * "_profiles", dir = data_directory, force = true)
+                     
 simulation.output_writers[:volume] =
-    JLD2OutputWriter(model, (e=volume_e, vb=volume_vb, ζ²=volume_ζ², b²=volume_b²),
+    JLD2OutputWriter(model, (e=volume_e, vb=volume_vb, ζ²=volume_ζ², b²=volume_b²);
                      schedule = TimeInterval(fast_output_interval),
-                     prefix = prefix * "_volume_mean",
-                     max_filesize = 2GiB,
-                     force = force)
+                     prefix = prefix * "_volume_mean", dir = data_directory, force = true)
 
 #####
 ##### Run the simulation
@@ -392,9 +360,7 @@ normalize_profile(ϕ) = ϕ ./ maximum(abs, ϕ)
 
 @info "Making an animation from saved data..."
 
-anim = @animate for (j, iter) in enumerate(iterations[10:10:end])
-
-    i = j * 10
+anim = @animate for (j, iter) in enumerate(iterations)
 
     ## Load 3D fields from file
     t = surface_file["timeseries/t/$iter"]
@@ -427,16 +393,16 @@ anim = @animate for (j, iter) in enumerate(iterations[10:10:end])
     volume_mean_plot = plot(time, normalize_timeseries(mean_e);
                             linewidth=2, label="⟨e⟩", xlabel="time", ylabel="Volume mean")
 
-    plot!(volume_mean_plot, time, normalize_timeseries(mean_vb); linewidth=2, label="⟨vb⟩")
-    plot!(volume_mean_plot, time, normalize_timeseries(mean_ζ²); linewidth=2, label="⟨ζ²⟩")
-    plot!(volume_mean_plot, time, normalize_timeseries(mean_b²); linewidth=2, label="⟨b²⟩")
-    plot!(volume_mean_plot, [1, 1] .* time[i], [0, 1]; linewidth=2, alpha=0.4, label=nothing,
+    plot!(volume_mean_plot, time, normalize_timeseries(mean_vb); linewidth=2, alpha=0.6, label="⟨vb⟩")
+    plot!(volume_mean_plot, time, normalize_timeseries(mean_ζ²); linewidth=2, alpha=0.6, label="⟨ζ²⟩")
+    plot!(volume_mean_plot, time, normalize_timeseries(mean_b²); linewidth=2, alpha=0.6, label="⟨b²⟩")
+    plot!(volume_mean_plot, [1, 1] .* time[i], [0, 1.5]; linewidth=2, alpha=0.4, label=nothing,
          legend=:topleft)
 
-    profiles_plot = plot( normalize_profile(profile_e), zc, label="\$ \\frac{1}{A} \\iint e \\, \\mathrm{d} A \$", xlims=(0, 1))
-    plot!(profiles_plot, normalize_profile(profile_vb), zc, label="\$ \\frac{1}{A} \\iint vb \\, \\mathrm{d} A \$")
-    plot!(profiles_plot, normalize_profile(profile_ζ²), zc, label="\$ \\frac{1}{A} \\iint \\zeta^2 \\, \\mathrm{d} A \$")
-    plot!(profiles_plot, normalize_profile(profile_b²), zc, label="\$ \\frac{1}{A} \\iint b^2 \\, \\mathrm{d} A \$",
+    profiles_plot = plot( normalize_profile(profile_e), zc, alpha=0.6, linewidth=2, label="\$ \\frac{1}{A} \\iint e \\, \\mathrm{d} A \$", xlims=(0, 1))
+    plot!(profiles_plot, normalize_profile(profile_vb), zc, alpha=0.6, linewidth=2, label="\$ \\frac{1}{A} \\iint vb \\, \\mathrm{d} A \$")
+    plot!(profiles_plot, normalize_profile(profile_ζ²), zc, alpha=0.6, linewidth=2, label="\$ \\frac{1}{A} \\iint \\zeta^2 \\, \\mathrm{d} A \$")
+    plot!(profiles_plot, normalize_profile(profile_b²), zc, alpha=0.6, linewidth=2, label="\$ \\frac{1}{A} \\iint b^2 \\, \\mathrm{d} A \$",
          legend=:topleft)
               
     surface_ζ_title = @sprintf("ζ(z=0, t=%.3e)", t)
@@ -457,4 +423,4 @@ anim = @animate for (j, iter) in enumerate(iterations[10:10:end])
     end
 end
 
-gif(anim, prefix * ".gif", fps = 2) # hide
+gif(anim, prefix * ".gif", fps = 8) # hide
