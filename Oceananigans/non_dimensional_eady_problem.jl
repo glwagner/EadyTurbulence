@@ -79,10 +79,10 @@ Ly = aspect_ratio * Lz
   N² = Ri * S^2
 
   D₁ = 0.0016
-  D₂ = 0.0
+  D₂ = 1e-3
 Ek_v = 1e-5
 Ek_h = 3e-1
-Ek_p = 0.0
+Ek_p = 1e-5
 
 # Derived parameters
 
@@ -218,7 +218,7 @@ model.velocities.v.data.parent .-= v̄
 
 max_Δt = min(0.3/f, grid.Δx / Ũ)
 
-cfl = 1.0
+cfl = 0.5
 bottom_bc == "quadratic-drag" && (cfl *= min(1, k₂ * grid.Δx / grid.Δz))
 
 wizard = TimeStepWizard(cfl=cfl, Δt=0.1*max_Δt, max_change=1.1, max_Δt=max_Δt)
@@ -265,7 +265,7 @@ b = model.tracers.b
 
 ## Eddy kinetic energy and buoyancy flux
 eddy_kinetic_energy = @at (Cell, Cell, Cell)  (u^2 + v^2 + w^2) / 2  
-buoyancy_flux = @at (Cell, Cell, Cell)  v * b
+buoyancy_flux = @at (Cell, Cell, Cell) v * b
 
  e = ComputedField(eddy_kinetic_energy)
 vb = ComputedField(buoyancy_flux)
@@ -356,6 +356,8 @@ run!(simulation, pickup=pickup)
 
 pyplot() # pyplot backend is a bit nicer than GR
 
+profiles_file = jldopen(prefix * "_profiles.jld2")
+volume_mean_file = jldopen(prefix * "_volume_mean.jld2")
 surface_file = jldopen(prefix * "_xy_surface.jld2")
 bottom_file = jldopen(prefix * "_xy_bottom.jld2")
 near_bottom_file = jldopen(prefix * "_xy_near_bottom.jld2")
@@ -363,20 +365,31 @@ near_bottom_file = jldopen(prefix * "_xy_near_bottom.jld2")
 xζ, yζ, zζ = nodes((Face, Face, Cell), grid)
 xw, yw, zw = nodes((Cell, Cell, Face), grid)
 
+zc = znodes(Cell, grid)
+
 iterations = parse.(Int, keys(surface_file["timeseries/t"]))
 
+time = [surface_file["timeseries/t/$iter"] for iter in iterations]
+
+ mean_e = [volume_mean_file["timeseries/e/$iter"][1, 1, 1]  for iter in iterations] 
+mean_vb = [volume_mean_file["timeseries/vb/$iter"][1, 1, 1] for iter in iterations]
+mean_ζ² = [volume_mean_file["timeseries/ζ²/$iter"][1, 1, 1] for iter in iterations]
+mean_b² = [volume_mean_file["timeseries/b²/$iter"][1, 1, 1] for iter in iterations]
+
 function divergent_levels(c, clim, nlevels=31)
-    levels = range(-clim, stop=clim, length=10)
+    levels = range(-clim, stop=clim, length=nlevels)
     cmax = maximum(abs, c)
     clim < cmax && (levels = vcat([-cmax], levels, [cmax]))
     return levels
 end
 
-# Now we're ready to animate.
+normalize(ϕ) = ϕ ./ ϕ[end]
+
+normalize_profile(ϕ) = ϕ ./ maximum(abs, ϕ)
 
 @info "Making an animation from saved data..."
 
-anim = @animate for (i, iter) in enumerate(iterations)
+anim = @animate for (i, iter) in enumerate(iterations[1:10:end])
 
     ## Load 3D fields from file
     t = surface_file["timeseries/t/$iter"]
@@ -385,7 +398,12 @@ anim = @animate for (i, iter) in enumerate(iterations)
     bottom_ζ = bottom_file["timeseries/ζ/$iter"][:, :, 1]
     bottom_w = near_bottom_file["timeseries/w/$iter"][:, :, 1]
 
-    ζlim = 0.7 * maximum(abs, surface_ζ) + 1e-9
+    profile_e  = profiles_file["timeseries/e/$iter"][1, 1, :]
+    profile_vb = profiles_file["timeseries/vb/$iter"][1, 1, :]
+    profile_ζ² = profiles_file["timeseries/ζ²/$iter"][1, 1, :]
+    profile_b² = profiles_file["timeseries/b²/$iter"][1, 1, :]
+
+    ζlim = 0.6 * maximum(abs, surface_ζ) + 1e-9
     wlim = 0.8 * maximum(abs, bottom_w) + 1e-9
 
     ζlevels = divergent_levels(surface_ζ, ζlim)
@@ -400,20 +418,36 @@ anim = @animate for (i, iter) in enumerate(iterations)
     surface_ζ_plot = contourf(xζ, yζ, surface_ζ'; clims = (-ζlim, ζlim), levels = ζlevels, kwargs...)
     bottom_ζ_plot = contourf(xζ, yζ, bottom_ζ'; clims = (-ζlim, ζlim), levels = ζlevels, kwargs...)
     bottom_w_plot = contourf(xw, yw, bottom_w'; clims = (-wlim, wlim), levels = wlevels, kwargs...)
+
+    volume_mean_plot = plot(time, normalize(mean_e);
+                            linewidth=2, label="⟨e⟩", xlabel="time", ylabel="Volume mean")
+
+    plot!(volume_mean_plot, time, normalize(mean_vb); linewidth=2, label="⟨vb⟩")
+    plot!(volume_mean_plot, time, normalize(mean_ζ²); linewidth=2, label="⟨ζ²⟩")
+    plot!(volume_mean_plot, time, normalize(mean_b²); linewidth=2, label="⟨b²⟩")
+    plot!(volume_mean_plot, time, normalize(mean_b²); linewidth=2, label="⟨b²⟩")
+    plot!(volume_mean_plot, [1, 1] .* time[i], [0, 1]; linewidth=1, alpha=0.4, label=nothing)
+
+    profiles_plot = plot(zc, normalize_profile(profile_e))
+    plot!(profiles_plot, zc, normalize_profile(profile_vb))
+    plot!(profiles_plot, zc, normalize_profile(profile_ζ²))
+    plot!(profiles_plot, zc, normalize_profile(profile_b²))
               
     surface_ζ_title = @sprintf("ζ(z=0, t=%.3e)", t)
     bottom_ζ_title = @sprintf("ζ(z=-Lz, t=%.3e)", t)
     bottom_w_title = @sprintf("w(z=-Lz, t=%.3e) (m s⁻¹)", t)
 
-    plot(surface_ζ_plot, bottom_ζ_plot, bottom_w_plot,
-           size = (2000, 1000),
-         layout = (1, 3),
-          title = [surface_ζ_title bottom_ζ_title bottom_w_title])
+    plot(surface_ζ_plot, bottom_ζ_plot, bottom_w_plot, volume_mean_plot,
+           size = (1200, 1000),
+         layout = (2, 2),
+          title = [surface_ζ_title bottom_ζ_title bottom_w_title "Volume averages"])
 
     if iter == iterations[end]
         close(surface_file)
         close(bottom_file)
         close(near_bottom_file)
+        close(profiles_file)
+        close(volume_mean_file)
     end
 end
 
