@@ -247,10 +247,11 @@ function (p::ProgressMessage)(sim)
     return nothing
 end
 
+stop_time = args["stop-time"]
 simulation = Simulation(model,
                         Δt = wizard,
                         iteration_interval = 100,
-                        stop_time = args["stop-time"],
+                        stop_time = stop_time,
                         progress = progress)
 
 #####
@@ -284,11 +285,11 @@ volume_b² = mean(b², dims=(1, 2, 3))
 volume_ζ² = mean(ζ², dims=(1, 2, 3))
 
 pickup = false
-fast_output_interval = 100
+fast_output_interval = floor(Int, stop_time/200)
 force = pickup ? false : true
 
 simulation.output_writers[:checkpointer] =
-    Checkpointer(model, schedule=TimeInterval(100), prefix = prefix * "_checkpointer")
+    Checkpointer(model, schedule=TimeInterval(floor(Int, stop_time/10)), prefix = prefix * "_checkpointer")
 
 simulation.output_writers[:xy_surface] =
     JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
@@ -383,13 +384,15 @@ function divergent_levels(c, clim, nlevels=31)
     return levels
 end
 
-normalize(ϕ) = ϕ ./ ϕ[end]
+normalize(ϕ) = ϕ
 
 normalize_profile(ϕ) = ϕ ./ maximum(abs, ϕ)
 
 @info "Making an animation from saved data..."
 
-anim = @animate for (i, iter) in enumerate(iterations[1:10:end])
+anim = @animate for (j, iter) in enumerate(iterations[10:10:end])
+
+    i = j * 10
 
     ## Load 3D fields from file
     t = surface_file["timeseries/t/$iter"]
@@ -415,9 +418,9 @@ anim = @animate for (i, iter) in enumerate(iterations[1:10:end])
     kwargs = (colorbar = true, color = :balance, aspectratio = 1, legend = false,
               xlims = (0, grid.Lx), ylims = (0, grid.Lx), xlabel = "x (m)", ylabel = "y (m)")
                            
-    surface_ζ_plot = contourf(xζ, yζ, surface_ζ'; clims = (-ζlim, ζlim), levels = ζlevels, kwargs...)
-    bottom_ζ_plot = contourf(xζ, yζ, bottom_ζ'; clims = (-ζlim, ζlim), levels = ζlevels, kwargs...)
-    bottom_w_plot = contourf(xw, yw, bottom_w'; clims = (-wlim, wlim), levels = wlevels, kwargs...)
+    surface_ζ_plot = contourf(xζ, yζ, surface_ζ'; clims=(-ζlim, ζlim), levels=ζlevels, kwargs...)
+    bottom_ζ_plot  = contourf(xζ, yζ, bottom_ζ';  clims=(-ζlim, ζlim), levels=ζlevels, kwargs...)
+    bottom_w_plot  = contourf(xw, yw, bottom_w';  clims=(-wlim, wlim), levels=wlevels, kwargs...)
 
     volume_mean_plot = plot(time, normalize(mean_e);
                             linewidth=2, label="⟨e⟩", xlabel="time", ylabel="Volume mean")
@@ -425,8 +428,7 @@ anim = @animate for (i, iter) in enumerate(iterations[1:10:end])
     plot!(volume_mean_plot, time, normalize(mean_vb); linewidth=2, label="⟨vb⟩")
     plot!(volume_mean_plot, time, normalize(mean_ζ²); linewidth=2, label="⟨ζ²⟩")
     plot!(volume_mean_plot, time, normalize(mean_b²); linewidth=2, label="⟨b²⟩")
-    plot!(volume_mean_plot, time, normalize(mean_b²); linewidth=2, label="⟨b²⟩")
-    plot!(volume_mean_plot, [1, 1] .* time[i], [0, 1]; linewidth=1, alpha=0.4, label=nothing)
+    plot!(volume_mean_plot, [1, 1] .* time[i], [0, 1]; linewidth=2, alpha=0.4, label=nothing)
 
     profiles_plot = plot(zc, normalize_profile(profile_e))
     plot!(profiles_plot, zc, normalize_profile(profile_vb))
@@ -437,7 +439,7 @@ anim = @animate for (i, iter) in enumerate(iterations[1:10:end])
     bottom_ζ_title = @sprintf("ζ(z=-Lz, t=%.3e)", t)
     bottom_w_title = @sprintf("w(z=-Lz, t=%.3e) (m s⁻¹)", t)
 
-    plot(surface_ζ_plot, bottom_ζ_plot, bottom_w_plot, volume_mean_plot,
+    plot(surface_ζ_plot, profiles_plot, bottom_w_plot, volume_mean_plot,
            size = (1200, 1000),
          layout = (2, 2),
           title = [surface_ζ_title bottom_ζ_title bottom_w_title "Volume averages"])
