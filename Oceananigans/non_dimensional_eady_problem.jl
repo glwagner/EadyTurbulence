@@ -283,14 +283,12 @@ volume_vb = mean(vb, dims=(1, 2, 3))
 volume_b² = mean(b², dims=(1, 2, 3))
 volume_ζ² = mean(ζ², dims=(1, 2, 3))
 
-fast_output_interval = 10
+pickup = false
+fast_output_interval = 100
+force = pickup ? false : true
 
-simulation.output_writers[:fields] =
-    JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                     schedule = TimeInterval(100),
-                     prefix = prefix * "_fields",
-                     max_filesize = 2GiB,
-                     force = true)
+simulation.output_writers[:checkpointer] =
+    Checkpointer(model, schedule=TimeInterval(100), prefix = prefix * "_checkpointer")
 
 simulation.output_writers[:xy_surface] =
     JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
@@ -298,7 +296,7 @@ simulation.output_writers[:xy_surface] =
                      prefix = prefix * "_xy_surface",
                      field_slicer = FieldSlicer(k=grid.Nz),
                      max_filesize = 2GiB,
-                     force = true)
+                     force = force)
 
 simulation.output_writers[:xy_bottom] =
     JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
@@ -306,7 +304,7 @@ simulation.output_writers[:xy_bottom] =
                      prefix = prefix * "_xy_bottom",
                      field_slicer = FieldSlicer(k=1),
                      max_filesize = 2GiB,
-                     force = true)
+                     force = force)
 
 simulation.output_writers[:xy_near_bottom] =
     JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
@@ -314,7 +312,7 @@ simulation.output_writers[:xy_near_bottom] =
                      prefix = prefix * "_xy_near_bottom",
                      field_slicer = FieldSlicer(k=2),
                      max_filesize = 2GiB,
-                     force = true)
+                     force = force)
 
 simulation.output_writers[:xz] =
     JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
@@ -322,7 +320,7 @@ simulation.output_writers[:xz] =
                      prefix = prefix * "_xz",
                      field_slicer = FieldSlicer(j=1),
                      max_filesize = 2GiB,
-                     force = true)
+                     force = force)
 
 simulation.output_writers[:yz] =
     JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
@@ -330,27 +328,27 @@ simulation.output_writers[:yz] =
                      prefix = prefix * "_yz",
                      field_slicer = FieldSlicer(i=1),
                      max_filesize = 2GiB,
-                     force = true)
+                     force = force)
 
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, (e=profile_e, vb=profile_vb, ζ²=profile_ζ², b²=profile_b², bz=profile_bz),
                      schedule = TimeInterval(fast_output_interval),
                      prefix = prefix * "_profiles",
                      max_filesize = 2GiB,
-                     force = true)
+                     force = force)
 
 simulation.output_writers[:volume] =
     JLD2OutputWriter(model, (e=volume_e, vb=volume_vb, ζ²=volume_ζ², b²=volume_b²),
                      schedule = TimeInterval(fast_output_interval),
                      prefix = prefix * "_volume_mean",
                      max_filesize = 2GiB,
-                     force = true)
+                     force = force)
 
 #####
 ##### Run the simulation
 #####
 
-run!(simulation)
+run!(simulation, pickup=pickup)
 
 #####
 ##### Visualizing Eady turbulence
