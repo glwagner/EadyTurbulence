@@ -82,7 +82,7 @@ Ly = aspect_ratio * Lz
   D₂ = 1e-3
 Ek_v = 1e-5
 Ek_h = 3e-1
-Ek_p = 1e-5
+Ek_p = Ek_v
 
 # Derived parameters
 
@@ -178,7 +178,7 @@ Laplacian_diffusivity = AnisotropicDiffusivity(νh=νh, κh=κh, νz=νv, κz=κ
 ##### Model instantiation and initial condition
 #####
 
-prefix = @sprintf("non_dimensional_eady_%s_Nh%d_Nz%d", bottom_bc, grid.Nx, grid.Nz)
+prefix = @sprintf("non_dimensional_eady_%s_vEkman%.1e_Nh%d_Nz%d", bottom_bc, Ek_v, grid.Nx, grid.Nz)
 
 model = IncompressibleModel(
            architecture = GPU(),
@@ -347,16 +347,22 @@ mean_vb = [volume_mean_file["timeseries/vb/$iter"][1, 1, 1] for iter in iteratio
 mean_ζ² = [volume_mean_file["timeseries/ζ²/$iter"][1, 1, 1] for iter in iterations]
 mean_b² = [volume_mean_file["timeseries/b²/$iter"][1, 1, 1] for iter in iterations]
 
+# Normalizations for plotting. Recall:
+#
+# Ũ = S * Lz
+# B̃ = S * Lz * f
+
+e_norm = (S * Lz)^2
+vb_norm = f * (S * Lz)^2
+ζ²_norm = S^2
+b²_norm = (S * Lz * f)^2
+
 function divergent_levels(c, clim, nlevels=31)
     levels = range(-clim, stop=clim, length=nlevels)
     cmax = maximum(abs, c)
     clim < cmax && (levels = vcat([-cmax], levels, [cmax]))
     return levels
 end
-
-normalize_timeseries(ϕ) = ϕ / ϕ[end]
-
-normalize_profile(ϕ) = ϕ ./ maximum(abs, ϕ)
 
 @info "Making an animation from saved data..."
 
@@ -375,7 +381,7 @@ anim = @animate for (j, iter) in enumerate(iterations)
     profile_b² = profiles_file["timeseries/b²/$iter"][1, 1, :]
 
     ζlim = 0.6 * maximum(abs, surface_ζ) + 1e-9
-    wlim = 0.8 * maximum(abs, bottom_w) + 1e-9
+    wlim = 0.6 * maximum(abs, bottom_w) + 1e-9
 
     ζlevels = divergent_levels(surface_ζ, ζlim)
     wlevels = divergent_levels(bottom_w, wlim)
@@ -390,29 +396,29 @@ anim = @animate for (j, iter) in enumerate(iterations)
     bottom_ζ_plot  = contourf(xζ, yζ, bottom_ζ';  clims=(-ζlim, ζlim), levels=ζlevels, kwargs...)
     bottom_w_plot  = contourf(xw, yw, bottom_w';  clims=(-wlim, wlim), levels=wlevels, kwargs...)
 
-    volume_mean_plot = plot(time, normalize_timeseries(mean_e);
-                            linewidth=2, label="⟨e⟩", xlabel="time", ylabel="Volume mean")
+    volume_mean_plot = plot(time, mean_e  ./ e_norm;  linewidth=2, alpha=0.6, label="⟨e⟩", xlabel="time", ylabel="Volume mean")
+    plot!(volume_mean_plot, time, mean_vb ./ vb_norm; linewidth=2, alpha=1.0, label="⟨vb⟩")
+    plot!(volume_mean_plot, time, mean_ζ² ./ ζ²_norm; linewidth=2, alpha=0.5, label="⟨ζ²⟩")
+    plot!(volume_mean_plot, time, mean_b² ./ b²_norm; linewidth=2, alpha=0.5, label="⟨b²⟩")
 
-    plot!(volume_mean_plot, time, normalize_timeseries(mean_vb); linewidth=2, alpha=0.6, label="⟨vb⟩")
-    plot!(volume_mean_plot, time, normalize_timeseries(mean_ζ²); linewidth=2, alpha=0.6, label="⟨ζ²⟩")
-    plot!(volume_mean_plot, time, normalize_timeseries(mean_b²); linewidth=2, alpha=0.6, label="⟨b²⟩")
-    plot!(volume_mean_plot, [1, 1] .* time[i], [0, 1.5]; linewidth=2, alpha=0.4, label=nothing,
+    plot!(volume_mean_plot, [1, 1] .* time[i], [0, 1.5]; linewidth=4, alpha=0.4, label=nothing,
          legend=:topleft)
 
-    profiles_plot = plot( normalize_profile(profile_e), zc, alpha=0.6, linewidth=2, label="\$ \\frac{1}{A} \\iint e \\, \\mathrm{d} A \$", xlims=(0, 1))
-    plot!(profiles_plot, normalize_profile(profile_vb), zc, alpha=0.6, linewidth=2, label="\$ \\frac{1}{A} \\iint vb \\, \\mathrm{d} A \$")
-    plot!(profiles_plot, normalize_profile(profile_ζ²), zc, alpha=0.6, linewidth=2, label="\$ \\frac{1}{A} \\iint \\zeta^2 \\, \\mathrm{d} A \$")
-    plot!(profiles_plot, normalize_profile(profile_b²), zc, alpha=0.6, linewidth=2, label="\$ \\frac{1}{A} \\iint b^2 \\, \\mathrm{d} A \$",
-         legend=:topleft)
+    profiles_plot = plot( profile_e ./ e_norm,  zc, alpha=0.5, linewidth=2, label="\$ (S L_z)^{-2} \\bar e \$", xlims=(0, 1))
+    plot!(profiles_plot, profile_vb ./ vb_norm, zc, alpha=0.8, linewidth=2, label="\$ f^{-1} (S L_z)^{-2} \\overline{vb} \$")
+    plot!(profiles_plot, profile_ζ² ./ ζ²_norm, zc, alpha=0.5, linewidth=2, label="\$ S^{-2} \\frac{1}{A} \\overline{\\zeta^2\$")
+    plot!(profiles_plot, profile_b² ./ b²_norm, zc, alpha=0.5, linewidth=2, label="\$ (f S L_z)^{-2} \\overline{b^2} \$",
+          legend=:topleft)
               
     surface_ζ_title = @sprintf("ζ(z=0, t=%.3e)", t)
     bottom_ζ_title = @sprintf("ζ(z=-Lz, t=%.3e)", t)
     bottom_w_title = @sprintf("w(z=-Lz, t=%.3e) (m s⁻¹)", t)
+    profiles_title = @sprintf("Normalized horizontal averages (t=%.3e)", t)
 
     plot(surface_ζ_plot, profiles_plot, bottom_w_plot, volume_mean_plot,
            size = (1200, 1000),
          layout = (2, 2),
-          title = [surface_ζ_title bottom_ζ_title bottom_w_title "Volume averages"])
+          title = [surface_ζ_title profiles_title bottom_w_title "Normalized volume averages"])
 
     if iter == iterations[end]
         close(surface_file)
