@@ -75,13 +75,13 @@ Ek_p = 0.0
 
 # Derived parameters
 
-  νv = Ek_v * f * Lz^2
-  νh = Ek_v * f * Lz^2
-  κv = νv / Pr
-  κh = νh / Pr
-  k₁ = D₁ * f * Lz
-  k₂ = D₂
-  kp = (Ek_p / 2)^2
+νv = Ek_v * f * Lz^2
+νh = Ek_v * f * Lz^2
+κv = νv / Pr
+κh = νh / Pr
+k₁ = D₁ * f * Lz
+k₂ = D₂
+kp = (Ek_p / 2)^2
 
 #####
 ##### Background fields
@@ -302,7 +302,6 @@ simulation.output_writers[:xy_near_bottom] =
                      field_slicer = FieldSlicer(k=2),
                      max_filesize = 2GiB,
                      force = true)
-
 
 simulation.output_writers[:xz] =
     JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
