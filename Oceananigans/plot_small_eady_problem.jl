@@ -1,45 +1,70 @@
-# # Visualizing Eady turbulence
-#
-# We animate the results by opening the JLD2 file, extracting data for
-# the iterations we ended up saving at, and ploting slices of the saved
-# fields. We prepare for animating the flow by creating coordinate arrays,
-# opening the file, building a vector of the iterations that we saved
-# data at, and defining a function for computing colorbar limits: 
-
-using JLD2, Plots, Printf, Oceananigans, Oceananigans.Grids
-
+using JLD2
+using Plots
+using Printf
+using Statistics
+using ArgParse
+using Oceananigans
+using Oceananigans.Grids
+using Oceananigans.Utils: minute, hour, day, GiB, prettytime
 using Oceananigans.Grids: x_domain, y_domain, z_domain # for nice domain limits
+
+"Returns a dictionary of command line arguments."
+function parse_command_line_arguments()
+    settings = ArgParseSettings()
+
+    @add_arg_table! settings begin
+        "--Nh"
+            help = "The number of grid points in x, y."
+            default = 32
+            arg_type = Int
+
+        "--Nz"
+            help = "The number of grid points in z."
+            default = 32
+            arg_type = Int
+
+        "--geostrophic-shear"
+            help = """The geostrophic shear non-dimensionalized by f."""
+            default = 1.0
+            arg_type = Float64
+
+        "--only-plot"
+            help = """Just plot results, don't run anything."""
+            default = false
+            arg_type = Bool
+    end
+
+    return parse_args(settings)
+end
+
+args = parse_command_line_arguments()
+
+Nh = args["Nh"]
+Nz = args["Nz"]
+α_f = args["geostrophic-shear"]
+stop_years = args["years"]
+year = 365day
+
+grid = RegularCartesianGrid(size=(Nh, Nh, Nz), x=(0, 1e6), y=(0, 1e6), z=(-1e3, 0))
+
+prefix = @sprintf("small_eady_problem_Nh%d_Nz%d_αf%.1e", grid.Nx, grid.Nz, α_f)
+
+# # Visualizing Eady turbulence
 
 pyplot() # pyplot backend is a bit nicer than GR
 
-Nx = 256
-Nz = 128
-
-prefix = @sprintf("small_eady_problem_Nh%d_Nz%d", Nx, Nz)
-
 ## Open the file with our data
- surface_file = jldopen(prefix * "_xy_surface.jld2")
-middepth_file = jldopen(prefix * "_xy_middepth.jld2")
-  bottom_file = jldopen(prefix * "_xy_bottom.jld2")
+file_xy = jldopen(prefix * "_xy_surface.jld2")
+file_xz = jldopen(prefix * "_xz.jld2")
 
-Nx = surface_file["grid/Nx"]
-Ny = surface_file["grid/Ny"]
-Nz = surface_file["grid/Nz"]
-
-Lx = surface_file["grid/Lx"]
-Ly = surface_file["grid/Ly"]
-Lz = surface_file["grid/Lz"]
-
-f = surface_file["coriolis/f"]
-
-grid = RegularCartesianGrid(size=(Nx, Ny, Nz), x=(0, Lx), y=(0, Ly), z=(-Lz, 0))
+f = file_xy["coriolis/f"]
 
 ## Coordinate arrays
 xζ, yζ, zζ = nodes((Face, Face, Cell), grid)
 xδ, yδ, zδ = nodes((Cell, Cell, Cell), grid)
 
 ## Extract a vector of iterations
-iterations = parse.(Int, keys(surface_file["timeseries/t"]))
+iterations = parse.(Int, keys(file_xy["timeseries/t"]))
 
 # This utility is handy for calculating nice contour intervals:
 
@@ -54,115 +79,100 @@ function nice_divergent_levels(c, clim, nlevels=30)
     return levels
 end
 
+function speed(u, v, grid)
+    ũ = zeros(grid.Nx, grid.Ny)
+    ṽ = zeros(grid.Nx, grid.Ny)
+
+    @views ũ[1:end-1, :] = @. (u[1:end-1, :] + u[2:end, :]) / 2
+    @views ũ[end, :]     = @. (u[1, :]       + u[end, :])   / 2
+
+    @views ṽ[:, 1:end-1] = @. (v[:, 1:end-1] + v[:, 2:end]) / 2
+    @views ṽ[:, end]     = @. (v[:, 1]       + v[:, end])   / 2
+
+    s = @. sqrt(ũ^2 + ṽ^2)
+
+    return s
+end
+
+
 # Now we're ready to animate.
 
 @info "Making an animation from saved data..."
 
-anim = @animate for (i, iter) in enumerate(iterations)
+niters = length(iterations)
+halfway = round(Int, niters/2)
+
+anim = @animate for (i, iter) in enumerate(iterations[halfway:16:end])
 
     ## Load 3D fields from file
-    t = surface_file["timeseries/t/$iter"]
+    t = file_xy["timeseries/t/$iter"]
 
-    surface_R = surface_file["timeseries/ζ/$iter"][:, :, 1] ./ f
-    surface_δ = surface_file["timeseries/δ/$iter"][:, :, 1] ./ f
+    Rxy = file_xy["timeseries/ζ/$iter"][:, :, 1] ./ f
+    wxy = file_xy["timeseries/w/$iter"][:, :, 1]
 
-    middepth_R = middepth_file["timeseries/ζ/$iter"][:, :, 1] ./ f
-    middepth_δ = middepth_file["timeseries/δ/$iter"][:, :, 1] ./ f
+    Rxz = file_xz["timeseries/ζ/$iter"][:, 1, :] ./ f
+    wxz = file_xz["timeseries/w/$iter"][:, 1, :]
+    
+    wlim = 1e-4
+    Rlim = 0.4
 
-    bottom_R = bottom_file["timeseries/ζ/$iter"][:, :, 1] ./ f
-    bottom_δ = bottom_file["timeseries/δ/$iter"][:, :, 1] ./ f
+    wlevels = nice_divergent_levels(wxz, wlim)
+    Rlevels = nice_divergent_levels(Rxz, Rlim)
 
-    Rlim = 0.8 * maximum(abs, surface_R) + 1e-9
-    δlim = 0.8 * maximum(abs, surface_δ) + 1e-9
+    @info @sprintf("Drawing frame %d from iteration %d: max(|ζ| / f) = %.3f, max(|w|) = %.2e (m s⁻¹) \n",
+                   i, iter, maximum(abs, Rxz), maximum(abs, wxz))
 
-    Rlevels = nice_divergent_levels(surface_R, Rlim)
-    δlevels = nice_divergent_levels(surface_δ, δlim)
+    xy_kwargs = (aspectratio = 1,
+                      legend = false,
+                       xlims = (0, grid.Lx),
+                       ylims = (0, grid.Lx),
+                      xlabel = "x (m)",
+                      ylabel = "y (m)")
 
-    @info @sprintf("Drawing frame %d from iteration %d: max(ζ̃ / f) = %.3f, max(δ / f) = %.3f \n",
-                   i, iter, maximum(abs, surface_R), maximum(abs, surface_δ))
+    xz_kwargs = (aspectratio = 10,
+                    colorbar = true,
+                      legend = false,
+                       xlims = (0, grid.Lx),
+                       ylims = (-grid.Lz, 0),
+                      xlabel = "x (m)",
+                      ylabel = "z (m)")
 
-    R_surface = contourf(xζ, yζ, surface_R';
-                          color = :balance,
-                    aspectratio = 1,
-                         legend = false,
-                          clims = (-Rlim, Rlim),
-                         levels = Rlevels,
-                          xlims = (0, grid.Lx),
-                          ylims = (0, grid.Lx),
-                         xlabel = "x (m)",
-                         ylabel = "y (m)")
+    Rxy_plot = contourf(xζ, yζ, Rxy';
+                        color = :balance,
+                        clims = (-Rlim, Rlim),
+                       levels = Rlevels,
+                       xy_kwargs...)
 
-    R_middepth = contourf(xζ, yζ, middepth_R';
-                          color = :balance,
-                    aspectratio = 1,
-                         legend = false,
-                          clims = (-Rlim, Rlim),
-                         levels = Rlevels,
-                          xlims = (0, grid.Lx),
-                          ylims = (0, grid.Lx),
-                         xlabel = "x (m)",
-                         ylabel = "y (m)")
+    wxy_plot = contourf(xδ, yδ, wxy';
+                        color = :balance,
+                        clims = (-wlim, wlim),
+                       levels = wlevels,
+                       xy_kwargs...)
 
-    R_bottom = contourf(xζ, yζ, bottom_R';
-                       colorbar = true,
-                          color = :balance,
-                    aspectratio = 1,
-                         legend = false,
-                          clims = (-Rlim, Rlim),
-                         levels = Rlevels,
-                          xlims = (0, grid.Lx),
-                          ylims = (0, grid.Lx),
-                         xlabel = "x (m)",
-                         ylabel = "y (m)")
+    Rxz_plot = contourf(xζ, yζ, Rxz';
+                        color = :balance,
+                        clims = (-Rlim, Rlim),
+                       levels = Rlevels,
+                       xz_kwargs...)
 
-    δ_surface = contourf(xδ, yδ, surface_δ';
-                          color = :balance,
-                    aspectratio = 1,
-                         legend = false,
-                          clims = (-δlim, δlim),
-                         levels = δlevels,
-                          xlims = (0, grid.Lx),
-                          ylims = (0, grid.Lx),
-                         xlabel = "x (m)",
-                         ylabel = "y (m)")
+    wxz_plot = contourf(xδ, yδ, wxz';
+                        color = :balance,
+                        clims = (-wlim, wlim),
+                       levels = wlevels,
+                       xz_kwargs...)
 
-    δ_middepth = contourf(xδ, yδ, middepth_δ';
-                          color = :balance,
-                    aspectratio = 1,
-                         legend = false,
-                          clims = (-δlim, δlim),
-                         levels = δlevels,
-                          xlims = (0, grid.Lx),
-                          ylims = (0, grid.Lx),
-                         xlabel = "x (m)",
-                         ylabel = "y (m)")
+    Rxy_title = @sprintf("ζ(z=0, t=%s) / f", prettytime(t))
+    wxy_title = @sprintf("w(z=0, t=%s) (m s⁻¹)", prettytime(t))
 
-    δ_bottom = contourf(xδ, yδ, bottom_δ';
-                       colorbar = true,
-                          color = :balance,
-                    aspectratio = 1,
-                         legend = false,
-                          clims = (-δlim, δlim),
-                         levels = δlevels,
-                          xlims = (0, grid.Lx),
-                          ylims = (0, grid.Lx),
-                         xlabel = "x (m)",
-                         ylabel = "y (m)")
+    Rxz_title = @sprintf("ζ(y=0, t=%s) / f", prettytime(t))
+    wxz_title = @sprintf("w(y=0, t=%s) (m s⁻¹)", prettytime(t))
 
-    ζ0 = @sprintf("surface ζ/f(t=%s) (s⁻¹)", prettytime(t))
-    δ0 = @sprintf("surface δ(t=%s) (s⁻¹)", prettytime(t))
-    ζ1 = @sprintf("middepth ζ/f(t=%s) (s⁻¹)", prettytime(t))
-    δ1 = @sprintf("middepth  δ(t=%s) (s⁻¹)", prettytime(t))
-    ζ2 = @sprintf("bottom ζ/f(t=%s) (s⁻¹)", prettytime(t))
-    δ2 = @sprintf("bottom δ(t=%s) (s⁻¹)", prettytime(t))
+    plot(Rxy_plot, wxy_plot, Rxz_plot, wxz_plot,
+           size = (1200, 1000),
+         layout = (2, 2),
+          title = [Rxy_title wxy_title Rxz_title wxz_title])
 
-    plot(R_surface, R_middepth, R_bottom, δ_surface, δ_middepth, δ_bottom,
-           size = (2000, 1000),
-           link = :x,
-         layout = (2, 3),
-          title = [ζ0 ζ1 ζ2 δ0 δ1 δ2])
-
-    iter == iterations[end] && (close(surface_file); close(middepth_file); close(bottom_file))
+    iter == iterations[end] && close(file)
 end
 
-gif(anim, prefix * ".gif", fps = 8) # hide
+gif(anim, prefix * "_two_depths.gif", fps = 8) # hide
