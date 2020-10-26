@@ -205,7 +205,7 @@ model.velocities.v.data.parent .-= v̄
 ##### Simulation construction
 #####
 
-max_Δt = min(0.2/f, grid.Δx / Ũ)
+max_Δt = min(0.3/f, grid.Δx / Ũ)
 
 cfl = 1.0
 bottom_bc == "quadratic-drag" && (cfl *= min(1, k₂ * grid.Δx / grid.Δz))
@@ -390,9 +390,9 @@ anim = @animate for (i, iter) in enumerate(iterations)
     bottom_ζ_plot = contourf(xζ, yζ, bottom_ζ'; clims = (-ζlim, ζlim), levels = ζlevels, kwargs...)
     bottom_w_plot = contourf(xw, yw, bottom_w'; clims = (-wlim, wlim), levels = wlevels, kwargs...)
               
-    surface_ζ_title = @sprintf("ζ(z=0, t=%s)", prettytime(t))
-    bottom_ζ_title = @sprintf("ζ(z=-Lz, t=%s)", prettytime(t))
-    w_title = @sprintf("w(z=-Lz, t=%s) (m s⁻¹)", prettytime(t))
+    surface_ζ_title = @sprintf("ζ(z=0, t=%.3e)", t)
+    bottom_ζ_title = @sprintf("ζ(z=-Lz, t=%.3e)", t)
+    bottom_w_title = @sprintf("w(z=-Lz, t=%.3e) (m s⁻¹)", t)
 
     plot(surface_ζ_plot, bottom_ζ_plot, bottom_w_plot,
            size = (2000, 1000),
