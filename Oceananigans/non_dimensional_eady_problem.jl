@@ -216,7 +216,7 @@ model.velocities.v.data.parent .-= v̄
 ##### Simulation construction
 #####
 
-max_Δt = min(0.3/f, grid.Δx / Ũ)
+max_Δt = min(0.1/f, grid.Δx / Ũ)
 
 cfl = 0.5
 bottom_bc == "quadratic-drag" && (cfl *= min(1, k₂ * grid.Δx / grid.Δz))
@@ -284,7 +284,6 @@ volume_vb = mean(vb, dims=(1, 2, 3))
 volume_b² = mean(b², dims=(1, 2, 3))
 volume_ζ² = mean(ζ², dims=(1, 2, 3))
 
-#=
 pickup = false
 fast_output_interval = floor(Int, stop_time/200)
 force = pickup ? false : true
@@ -319,7 +318,6 @@ simulation.output_writers[:volume] =
 #####
 
 run!(simulation, pickup=pickup)
-=#
 
 #####
 ##### Visualizing Eady turbulence
@@ -366,7 +364,7 @@ end
 
 @info "Making an animation from saved data..."
 
-anim = @animate for (j, iter) in enumerate(iterations)
+anim = @animate for (i, iter) in enumerate(iterations)
 
     ## Load 3D fields from file
     t = surface_file["timeseries/t/$iter"]
