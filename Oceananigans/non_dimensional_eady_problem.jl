@@ -3,10 +3,12 @@ using Printf
 using Statistics
 using Plots
 using JLD2
+using Adapt
 
 using Oceananigans
 using Oceananigans.Grids
 using Oceananigans.AbstractOperations
+using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction
 using Oceananigans.Utils
 using Oceananigans.Advection
 using Oceananigans.OutputWriters
@@ -14,6 +16,10 @@ using Oceananigans.Fields
 
 using Oceananigans.Operators: ℑxyᶜᶜᵃ, δyᵃᶠᵃ, δxᶠᵃᵃ
 using Oceananigans.Diagnostics: AdvectiveCFL
+
+Adapt.adapt_structure(to, dbf::DiscreteBoundaryFunction) =
+    DiscreteBoundaryFunction(Adapt.adapt(to, dbf.func),
+                             Adapt.adapt(to, dbf.parameters))
 
 "Returns a dictionary of command line arguments."
 function parse_command_line_arguments()
@@ -29,6 +35,11 @@ function parse_command_line_arguments()
             help = "The number of grid points in z."
             default = 32
             arg_type = Int
+
+        "--stop-time"
+            help = "Stop time for the simulation."
+            default = 100.0
+            arg_type = Float64
 
         "--bottom-bc"
             help = """The type of bottom boundary condition to use.
@@ -117,8 +128,8 @@ quadratic_drag_v_bc = BoundaryCondition(Flux, quadratic_drag_v, field_dependenci
 
 """ Returns the vertical component of vorticity. """
 @inline function ζᶠᶠᶜ(i, j, k, grid, u, v)
-    ∂x_v = δx(i, j, k, grid, v) / grid.Δx
-    ∂y_u = δy(i, j, k, grid, v) / grid.Δy
+    ∂x_v = δxᶠᵃᵃ(i, j, k, grid, v) / grid.Δx
+    ∂y_u = δyᵃᶠᵃ(i, j, k, grid, u) / grid.Δy
     return ∂x_v - ∂y_u
 end
 
@@ -170,7 +181,7 @@ Laplacian_diffusivity = AnisotropicDiffusivity(νh=νh, κh=κh, νz=νv, κz=κ
 prefix = @sprintf("non_dimensional_eady_%s_Nh%d_Nz%d", bottom_bc, grid.Nx, grid.Nz)
 
 model = IncompressibleModel(
-           architecture = CPU(),
+           architecture = GPU(),
                    grid = grid,
               advection = WENO5(),
             timestepper = :RungeKutta3,
@@ -236,9 +247,11 @@ function (p::ProgressMessage)(sim)
     return nothing
 end
 
-simulation = Simulation(model, Δt = wizard, iteration_interval = 10,
-                                                     stop_time = 2e2,
-                                                      progress = progress)
+simulation = Simulation(model,
+                        Δt = wizard,
+                        iteration_interval = 100,
+                        stop_time = args["stop-time"],
+                        progress = progress)
 
 #####
 ##### Output
@@ -374,7 +387,7 @@ anim = @animate for (i, iter) in enumerate(iterations)
     bottom_ζ = bottom_file["timeseries/ζ/$iter"][:, :, 1]
     bottom_w = near_bottom_file["timeseries/w/$iter"][:, :, 1]
 
-    ζlim = 0.8 * maximum(abs, surface_ζ) + 1e-9
+    ζlim = 0.7 * maximum(abs, surface_ζ) + 1e-9
     wlim = 0.8 * maximum(abs, bottom_w) + 1e-9
 
     ζlevels = divergent_levels(surface_ζ, ζlim)
@@ -397,7 +410,7 @@ anim = @animate for (i, iter) in enumerate(iterations)
     plot(surface_ζ_plot, bottom_ζ_plot, bottom_w_plot,
            size = (2000, 1000),
          layout = (1, 3),
-          title = [surface_ζ_title bottom_w_title bottom_w_title])
+          title = [surface_ζ_title bottom_ζ_title bottom_w_title])
 
     if iter == iterations[end]
         close(surface_file)
