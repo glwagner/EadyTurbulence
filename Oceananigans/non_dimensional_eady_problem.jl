@@ -178,7 +178,8 @@ Laplacian_diffusivity = AnisotropicDiffusivity(νh=νh, κh=κh, νz=νv, κz=κ
 ##### Model instantiation and initial condition
 #####
 
-prefix = @sprintf("non_dimensional_eady_%s_vEkman%.1e_Nh%d_Nz%d", bottom_bc, Ek_v, grid.Nx, grid.Nz)
+#prefix = @sprintf("non_dimensional_eady_%s_vEkman%.1e_Nh%d_Nz%d", bottom_bc, Ek_v, grid.Nx, grid.Nz)
+prefix = @sprintf("non_dimensional_eady_%s_Nh%d_Nz%d", bottom_bc, grid.Nx, grid.Nz)
 
 model = IncompressibleModel(
            architecture = GPU(),
@@ -284,8 +285,10 @@ volume_vb = mean(vb, dims=(1, 2, 3))
 volume_b² = mean(b², dims=(1, 2, 3))
 volume_ζ² = mean(ζ², dims=(1, 2, 3))
 
-pickup = false
-fast_output_interval = floor(Int, stop_time/200)
+#=
+pickup = true
+pickup == true && simulation.stop_time += 1000
+fast_output_interval = pickup ? 10 : floor(Int, stop_time/200)
 force = pickup ? false : true
 data_directory = joinpath("data", prefix)
 !isdir(data_directory) && mkdir(data_directory)
@@ -305,7 +308,7 @@ simulation.output_writers[:yz]             = JLD2OutputWriter(model, outputs; pr
     
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, (e=profile_e, vb=profile_vb, ζ²=profile_ζ², b²=profile_b², bz=profile_bz);
-                     schedule = AveragedTimeInterval(fast_output_interval, window=1000),
+                     schedule = AveragedTimeInterval(fast_output_interval, window=fast_output_interval/10),
                      prefix = prefix * "_profiles", dir = data_directory, force = true)
                      
 simulation.output_writers[:volume] =
@@ -318,6 +321,7 @@ simulation.output_writers[:volume] =
 #####
 
 run!(simulation, pickup=pickup)
+=#
 
 #####
 ##### Visualizing Eady turbulence
@@ -404,7 +408,7 @@ anim = @animate for (i, iter) in enumerate(iterations)
 
     profiles_plot = plot( profile_e ./ e_norm,  zc, alpha=0.5, linewidth=2, label="\$ (S L_z)^{-2} \\bar e \$", xlims=(0, 1))
     plot!(profiles_plot, profile_vb ./ vb_norm, zc, alpha=0.8, linewidth=2, label="\$ f^{-1} (S L_z)^{-2} \\overline{vb} \$")
-    plot!(profiles_plot, profile_ζ² ./ ζ²_norm, zc, alpha=0.5, linewidth=2, label="\$ S^{-2} \\frac{1}{A} \\overline{\\zeta^2\$")
+    plot!(profiles_plot, profile_ζ² ./ ζ²_norm, zc, alpha=0.5, linewidth=2, label="\$ S^{-2} \\frac{1}{A} \\overline{\\zeta^2} \$")
     plot!(profiles_plot, profile_b² ./ b²_norm, zc, alpha=0.5, linewidth=2, label="\$ (f S L_z)^{-2} \\overline{b^2} \$",
           legend=:topleft)
               
