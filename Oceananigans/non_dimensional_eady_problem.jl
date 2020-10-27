@@ -41,6 +41,16 @@ function parse_command_line_arguments()
             default = 100.0
             arg_type = Float64
 
+        "--vertical-Ekman-number"
+            help = "Ekman number in the vertical direction"
+            default = 1e-5
+            arg_type = Float64
+
+        "--horizontal-Ekman-number"
+            help = "Ekman number in the vertical direction"
+            default = 3e-1
+            arg_type = Float64
+
         "--bottom-bc"
             help = """The type of bottom boundary condition to use.
                       Options are:
@@ -80,14 +90,14 @@ Ly = aspect_ratio * Lz
 
   D₁ = 0.0016
   D₂ = 1e-3
-Ek_v = 1e-5
-Ek_h = 3e-1
+Ek_v = args["vertical-Ekman-number"]
+Ek_h = args["horizontal-Ekman-number"]
 Ek_p = Ek_v
 
 # Derived parameters
 
 νv = Ek_v * f * Lz^2
-νh = Ek_v * f * Lz^2
+νh = Ek_h * f * Lz^2
 κv = νv / Pr
 κh = νh / Pr
 k₁ = D₁ * f * Lz
