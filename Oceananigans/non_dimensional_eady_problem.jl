@@ -354,10 +354,8 @@ mean_b² = [volume_mean_file["timeseries/b²/$iter"][1, 1, 1] for iter in iterat
 # Ũ = S * Lz
 # B̃ = S * Lz * f
 
-e_norm = (S * Lz)^2
-vb_norm = f * (S * Lz)^2
-ζ²_norm = S^2
-b²_norm = (S * Lz * f)^2
+timeseries_norm(ϕ) = ϕ / ϕ[end]
+profile_norm(ϕ) = ϕ / maximum(ϕ)
 
 function divergent_levels(c, clim, nlevels=31)
     levels = range(-clim, stop=clim, length=nlevels)
@@ -382,8 +380,8 @@ anim = @animate for (i, iter) in enumerate(iterations)
     profile_ζ² = profiles_file["timeseries/ζ²/$iter"][1, 1, :]
     profile_b² = profiles_file["timeseries/b²/$iter"][1, 1, :]
 
-    ζlim = 0.6 * maximum(abs, surface_ζ) + 1e-9
-    wlim = 0.6 * maximum(abs, bottom_w) + 1e-9
+    ζlim = 0.5  #0.6 * maximum(abs, surface_ζ) + 1e-9
+    wlim = 1e-3 #0.6 * maximum(abs, bottom_w) + 1e-9
 
     ζlevels = divergent_levels(surface_ζ, ζlim)
     wlevels = divergent_levels(bottom_w, wlim)
@@ -398,18 +396,18 @@ anim = @animate for (i, iter) in enumerate(iterations)
     bottom_ζ_plot  = contourf(xζ, yζ, bottom_ζ';  clims=(-ζlim, ζlim), levels=ζlevels, kwargs...)
     bottom_w_plot  = contourf(xw, yw, bottom_w';  clims=(-wlim, wlim), levels=wlevels, kwargs...)
 
-    volume_mean_plot = plot(time, mean_e  ./ e_norm;  linewidth=2, alpha=0.6, label="⟨e⟩", xlabel="time", ylabel="Volume mean")
-    plot!(volume_mean_plot, time, mean_vb ./ vb_norm; linewidth=2, alpha=1.0, label="⟨vb⟩")
-    plot!(volume_mean_plot, time, mean_ζ² ./ ζ²_norm; linewidth=2, alpha=0.5, label="⟨ζ²⟩")
-    plot!(volume_mean_plot, time, mean_b² ./ b²_norm; linewidth=2, alpha=0.5, label="⟨b²⟩")
+    volume_mean_plot = plot(time, timeseries_norm(mean_e) ;  linewidth=2, alpha=0.6, label="⟨e⟩", xlabel="time", ylabel="Volume mean")
+    plot!(volume_mean_plot, time, timeseries_norm(mean_vb); linewidth=2, alpha=1.0, label="⟨vb⟩")
+    plot!(volume_mean_plot, time, timeseries_norm(mean_ζ²); linewidth=2, alpha=0.5, label="⟨ζ²⟩")
+    plot!(volume_mean_plot, time, timeseries_norm(mean_b²); linewidth=2, alpha=0.5, label="⟨b²⟩")
 
     plot!(volume_mean_plot, [1, 1] .* time[i], [0, 1.5]; linewidth=4, alpha=0.4, label=nothing,
          legend=:topleft)
 
-    profiles_plot = plot( profile_e ./ e_norm,  zc, alpha=0.5, linewidth=2, label="\$ (S L_z)^{-2} \\bar e \$", xlims=(0, 1))
-    plot!(profiles_plot, profile_vb ./ vb_norm, zc, alpha=0.8, linewidth=2, label="\$ f^{-1} (S L_z)^{-2} \\overline{vb} \$")
-    plot!(profiles_plot, profile_ζ² ./ ζ²_norm, zc, alpha=0.5, linewidth=2, label="\$ S^{-2} \\frac{1}{A} \\overline{\\zeta^2} \$")
-    plot!(profiles_plot, profile_b² ./ b²_norm, zc, alpha=0.5, linewidth=2, label="\$ (f S L_z)^{-2} \\overline{b^2} \$",
+    profiles_plot = plot(profile_norm(profile_e) ,  zc, alpha=0.5, linewidth=2, label="\$ (S L_z)^{-2} \\bar e \$", xlims=(0, 1))
+    plot!(profiles_plot, profile_norm(profile_vb), zc, alpha=0.8, linewidth=2, label="\$ f^{-1} (S L_z)^{-2} \\overline{vb} \$")
+    plot!(profiles_plot, profile_norm(profile_ζ²), zc, alpha=0.5, linewidth=2, label="\$ S^{-2} \\frac{1}{A} \\overline{\\zeta^2} \$")
+    plot!(profiles_plot, profile_norm(profile_b²), zc, alpha=0.5, linewidth=2, label="\$ (f S L_z)^{-2} \\overline{b^2} \$",
           legend=:topleft)
               
     surface_ζ_title = @sprintf("ζ(z=0, t=%.3e)", t)
@@ -431,4 +429,4 @@ anim = @animate for (i, iter) in enumerate(iterations)
     end
 end
 
-gif(anim, prefix * ".gif", fps = 8) # hide
+gif(anim, prefix * ".gif", fps = 4) # hide
