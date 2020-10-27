@@ -178,8 +178,7 @@ Laplacian_diffusivity = AnisotropicDiffusivity(νh=νh, κh=κh, νz=νv, κz=κ
 ##### Model instantiation and initial condition
 #####
 
-#prefix = @sprintf("non_dimensional_eady_%s_vEkman%.1e_Nh%d_Nz%d", bottom_bc, Ek_v, grid.Nx, grid.Nz)
-prefix = @sprintf("non_dimensional_eady_%s_Nh%d_Nz%d", bottom_bc, grid.Nx, grid.Nz)
+prefix = @sprintf("non_dimensional_eady_%s_vEkman%.1e_Nh%d_Nz%d", bottom_bc, Ek_v, grid.Nx, grid.Nz)
 
 model = IncompressibleModel(
            architecture = GPU(),
