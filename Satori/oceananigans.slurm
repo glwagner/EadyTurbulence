@@ -24,9 +24,9 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 cd $DIR/../Oceananigans/
 
-CUDA_VISIBLE_DEVICES=0 julia --project non_dimensional_eady_problem.jl --Nh 192 --stop-time 40000 --bottom-bc linear-drag
-CUDA_VISIBLE_DEVICES=1 julia --project non_dimensional_eady_problem.jl --Nh 256 --stop-time 40000 --bottom-bc linear-drag
-CUDA_VISIBLE_DEVICES=2 julia --project non_dimensional_eady_problem.jl --Nh 192 --stop-time 40000 --bottom-bc pumping-velocity
-CUDA_VISIBLE_DEVICES=3 julia --project non_dimensional_eady_problem.jl --Nh 256 --stop-time 40000 --bottom-bc pumping-velocity
+CUDA_VISIBLE_DEVICES=0 unbuffer julia --project non_dimensional_eady_problem.jl --Nh 192 --stop-time 60000 --bottom-bc linear-drag 2>&1 | tee linear_192.out &
+CUDA_VISIBLE_DEVICES=1 unbuffer julia --project non_dimensional_eady_problem.jl --Nh 256 --stop-time 60000 --bottom-bc linear-drag 2>&1 | tee linear_256.out &
+CUDA_VISIBLE_DEVICES=2 unbuffer julia --project non_dimensional_eady_problem.jl --Nh 192 --stop-time 60000 --bottom-bc pumping-velocity 2>&1 | tee pumping_192.out &
+CUDA_VISIBLE_DEVICES=3 unbuffer julia --project non_dimensional_eady_problem.jl --Nh 256 --stop-time 60000 --bottom-bc pumping-velocity 2>&1 | tee pumping_256.out &
 
 sleep 42480 # sleep for 11.8 hours
