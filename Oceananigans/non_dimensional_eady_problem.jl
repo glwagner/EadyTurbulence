@@ -389,7 +389,7 @@ anim = @animate for (i, iter) in enumerate(iterations)
     @info @sprintf("Drawing frame %d from iteration %d: max(|ζ̃|) = %.3f\n",
                    i, iter, maximum(abs, surface_ζ))
 
-    kwargs = (colorbar = true, color = :balance, aspectratio = 1, legend = false,
+    kwargs = (colorbar = true, color = :balance, aspectratio = 1,
               xlims = (0, grid.Lx), ylims = (0, grid.Lx), xlabel = "x (m)", ylabel = "y (m)")
                            
     surface_ζ_plot = contourf(xζ, yζ, surface_ζ'; clims=(-ζlim, ζlim), levels=ζlevels, kwargs...)
