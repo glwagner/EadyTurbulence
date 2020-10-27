@@ -295,11 +295,11 @@ volume_b² = mean(b², dims=(1, 2, 3))
 volume_ζ² = mean(ζ², dims=(1, 2, 3))
 
 pickup = false
-pickup && simulation.stop_time += 1000
+pickup && (simulation.stop_time += 1000)
 fast_output_interval = pickup ? 10 : floor(Int, stop_time/200)
 force = pickup ? false : true
-data_directory = joinpath("data", prefix)
-!isdir(data_directory) && mkdir(data_directory)
+data_directory = joinpath("/home/glwagner/EadyTurbulence/Oceananigans", "data", prefix)
+!isdir(data_directory) && mkpath(data_directory)
 
 outputs = merge(model.velocities, model.tracers, (ζ=ζ, δ=δ))
 
@@ -317,19 +317,18 @@ simulation.output_writers[:yz]             = JLD2OutputWriter(model, outputs; pr
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, (e=profile_e, vb=profile_vb, ζ²=profile_ζ², b²=profile_b², bz=profile_bz);
                      schedule = AveragedTimeInterval(fast_output_interval, window=fast_output_interval/20),
-                     prefix = prefix * "_profiles", dir = data_directory, force = true)
+                     prefix = prefix * "_profiles", dir = data_directory, force = force)
                      
 simulation.output_writers[:volume] =
     JLD2OutputWriter(model, (e=volume_e, vb=volume_vb, ζ²=volume_ζ², b²=volume_b²);
                      schedule = TimeInterval(fast_output_interval),
-                     prefix = prefix * "_volume_mean", dir = data_directory, force = true)
+                     prefix = prefix * "_volume_mean", dir = data_directory, force = force)
 
 #####
 ##### Run the simulation
 #####
 
 run!(simulation, pickup=pickup)
-=#
 
 #####
 ##### Visualizing Eady turbulence
@@ -337,11 +336,11 @@ run!(simulation, pickup=pickup)
 
 pyplot() # pyplot backend is a bit nicer than GR
 
-profiles_file = jldopen(prefix * "_profiles.jld2")
-volume_mean_file = jldopen(prefix * "_volume_mean.jld2")
-surface_file = jldopen(prefix * "_xy_surface.jld2")
-bottom_file = jldopen(prefix * "_xy_bottom.jld2")
-near_bottom_file = jldopen(prefix * "_xy_near_bottom.jld2")
+profiles_file    = jldopen(joinpath(data_directory, prefix * "_profiles.jld2"))
+volume_mean_file = jldopen(joinpath(data_directory, prefix * "_volume_mean.jld2"))
+surface_file     = jldopen(joinpath(data_directory, prefix * "_xy_surface.jld2"))
+bottom_file      = jldopen(joinpath(data_directory, prefix * "_xy_bottom.jld2"))
+near_bottom_file = jldopen(joinpath(data_directory, prefix * "_xy_near_bottom.jld2"))
 
 xζ, yζ, zζ = nodes((Face, Face, Cell), grid)
 xw, yw, zw = nodes((Cell, Cell, Face), grid)
