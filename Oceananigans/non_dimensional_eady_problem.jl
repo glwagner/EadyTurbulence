@@ -294,9 +294,8 @@ volume_vb = mean(vb, dims=(1, 2, 3))
 volume_b² = mean(b², dims=(1, 2, 3))
 volume_ζ² = mean(ζ², dims=(1, 2, 3))
 
-#=
-pickup = true
-pickup == true && simulation.stop_time += 1000
+pickup = false
+pickup && simulation.stop_time += 1000
 fast_output_interval = pickup ? 10 : floor(Int, stop_time/200)
 force = pickup ? false : true
 data_directory = joinpath("data", prefix)
@@ -317,7 +316,7 @@ simulation.output_writers[:yz]             = JLD2OutputWriter(model, outputs; pr
     
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, (e=profile_e, vb=profile_vb, ζ²=profile_ζ², b²=profile_b², bz=profile_bz);
-                     schedule = AveragedTimeInterval(fast_output_interval, window=fast_output_interval/10),
+                     schedule = AveragedTimeInterval(fast_output_interval, window=fast_output_interval/20),
                      prefix = prefix * "_profiles", dir = data_directory, force = true)
                      
 simulation.output_writers[:volume] =
