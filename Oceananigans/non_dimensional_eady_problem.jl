@@ -413,10 +413,10 @@ anim = @animate for (i, iter) in enumerate(iterations)
     plot!(volume_mean_plot, [1, 1] .* time[i], [0, 1.5]; linewidth=4, alpha=0.4, label=nothing,
          legend=:topleft)
 
-    profiles_plot = plot(profile_norm(profile_e) ,  zc, alpha=0.5, linewidth=2, label="\$ (S L_z)^{-2} \\bar e \$", xlims=(0, 1))
-    plot!(profiles_plot, profile_norm(profile_vb), zc, alpha=0.8, linewidth=2, label="\$ f^{-1} (S L_z)^{-2} \\overline{vb} \$")
-    plot!(profiles_plot, profile_norm(profile_ζ²), zc, alpha=0.5, linewidth=2, label="\$ S^{-2} \\frac{1}{A} \\overline{\\zeta^2} \$")
-    plot!(profiles_plot, profile_norm(profile_b²), zc, alpha=0.5, linewidth=2, label="\$ (f S L_z)^{-2} \\overline{b^2} \$",
+    profiles_plot = plot(profile_norm(profile_e) ,  zc, alpha=0.5, linewidth=2, label="\$ \\bar e \$", xlims=(0, 1))
+    plot!(profiles_plot, profile_norm(profile_vb), zc, alpha=0.8, linewidth=2, label="\$ \\overline{vb} \$")
+    plot!(profiles_plot, profile_norm(profile_ζ²), zc, alpha=0.5, linewidth=2, label="\$ \\overline{\\zeta^2} \$")
+    plot!(profiles_plot, profile_norm(profile_b²), zc, alpha=0.5, linewidth=2, label="\$ \\overline{b^2} \$",
           legend=:topleft)
               
     surface_ζ_title = @sprintf("ζ(z=0, t=%.3e)", t)
