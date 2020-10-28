@@ -41,6 +41,16 @@ function parse_command_line_arguments()
             default = 100.0
             arg_type = Float64
 
+        "--vertical-Ekman-number"
+            help = "Ekman number in the vertical direction"
+            default = 1e-5
+            arg_type = Float64
+
+        "--horizontal-Ekman-number"
+            help = "Ekman number in the vertical direction"
+            default = 3e-1
+            arg_type = Float64
+
         "--bottom-bc"
             help = """The type of bottom boundary condition to use.
                       Options are:
@@ -80,14 +90,14 @@ Ly = aspect_ratio * Lz
 
   D₁ = 0.0016
   D₂ = 1e-3
-Ek_v = 1e-5
-Ek_h = 3e-1
+Ek_v = args["vertical-Ekman-number"]
+Ek_h = args["horizontal-Ekman-number"]
 Ek_p = Ek_v
 
 # Derived parameters
 
 νv = Ek_v * f * Lz^2
-νh = Ek_v * f * Lz^2
+νh = Ek_h * f * Lz^2
 κv = νv / Pr
 κh = νh / Pr
 k₁ = D₁ * f * Lz
@@ -178,8 +188,7 @@ Laplacian_diffusivity = AnisotropicDiffusivity(νh=νh, κh=κh, νz=νv, κz=κ
 ##### Model instantiation and initial condition
 #####
 
-#prefix = @sprintf("non_dimensional_eady_%s_vEkman%.1e_Nh%d_Nz%d", bottom_bc, Ek_v, grid.Nx, grid.Nz)
-prefix = @sprintf("non_dimensional_eady_%s_Nh%d_Nz%d", bottom_bc, grid.Nx, grid.Nz)
+prefix = @sprintf("non_dimensional_eady_%s_vEkman%.1e_Nh%d_Nz%d", bottom_bc, Ek_v, grid.Nx, grid.Nz)
 
 model = IncompressibleModel(
            architecture = GPU(),
@@ -285,13 +294,12 @@ volume_vb = mean(vb, dims=(1, 2, 3))
 volume_b² = mean(b², dims=(1, 2, 3))
 volume_ζ² = mean(ζ², dims=(1, 2, 3))
 
-#=
-pickup = true
-pickup == true && simulation.stop_time += 1000
+pickup = false
+pickup && (simulation.stop_time += 1000)
 fast_output_interval = pickup ? 10 : floor(Int, stop_time/200)
 force = pickup ? false : true
-data_directory = joinpath("data", prefix)
-!isdir(data_directory) && mkdir(data_directory)
+data_directory = joinpath("/home/glwagner/EadyTurbulence/Oceananigans", "data", prefix)
+!isdir(data_directory) && mkpath(data_directory)
 
 outputs = merge(model.velocities, model.tracers, (ζ=ζ, δ=δ))
 
@@ -308,20 +316,19 @@ simulation.output_writers[:yz]             = JLD2OutputWriter(model, outputs; pr
     
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, (e=profile_e, vb=profile_vb, ζ²=profile_ζ², b²=profile_b², bz=profile_bz);
-                     schedule = AveragedTimeInterval(fast_output_interval, window=fast_output_interval/10),
-                     prefix = prefix * "_profiles", dir = data_directory, force = true)
+                     schedule = AveragedTimeInterval(fast_output_interval, window=fast_output_interval/20),
+                     prefix = prefix * "_profiles", dir = data_directory, force = force)
                      
 simulation.output_writers[:volume] =
     JLD2OutputWriter(model, (e=volume_e, vb=volume_vb, ζ²=volume_ζ², b²=volume_b²);
                      schedule = TimeInterval(fast_output_interval),
-                     prefix = prefix * "_volume_mean", dir = data_directory, force = true)
+                     prefix = prefix * "_volume_mean", dir = data_directory, force = force)
 
 #####
 ##### Run the simulation
 #####
 
 run!(simulation, pickup=pickup)
-=#
 
 #####
 ##### Visualizing Eady turbulence
@@ -329,11 +336,11 @@ run!(simulation, pickup=pickup)
 
 pyplot() # pyplot backend is a bit nicer than GR
 
-profiles_file = jldopen(prefix * "_profiles.jld2")
-volume_mean_file = jldopen(prefix * "_volume_mean.jld2")
-surface_file = jldopen(prefix * "_xy_surface.jld2")
-bottom_file = jldopen(prefix * "_xy_bottom.jld2")
-near_bottom_file = jldopen(prefix * "_xy_near_bottom.jld2")
+profiles_file    = jldopen(joinpath(data_directory, prefix * "_profiles.jld2"))
+volume_mean_file = jldopen(joinpath(data_directory, prefix * "_volume_mean.jld2"))
+surface_file     = jldopen(joinpath(data_directory, prefix * "_xy_surface.jld2"))
+bottom_file      = jldopen(joinpath(data_directory, prefix * "_xy_bottom.jld2"))
+near_bottom_file = jldopen(joinpath(data_directory, prefix * "_xy_near_bottom.jld2"))
 
 xζ, yζ, zζ = nodes((Face, Face, Cell), grid)
 xw, yw, zw = nodes((Cell, Cell, Face), grid)
@@ -389,7 +396,7 @@ anim = @animate for (i, iter) in enumerate(iterations)
     @info @sprintf("Drawing frame %d from iteration %d: max(|ζ̃|) = %.3f\n",
                    i, iter, maximum(abs, surface_ζ))
 
-    kwargs = (colorbar = true, color = :balance, aspectratio = 1, legend = false,
+    kwargs = (colorbar = true, color = :balance, aspectratio = 1,
               xlims = (0, grid.Lx), ylims = (0, grid.Lx), xlabel = "x (m)", ylabel = "y (m)")
                            
     surface_ζ_plot = contourf(xζ, yζ, surface_ζ'; clims=(-ζlim, ζlim), levels=ζlevels, kwargs...)
@@ -404,10 +411,10 @@ anim = @animate for (i, iter) in enumerate(iterations)
     plot!(volume_mean_plot, [1, 1] .* time[i], [0, 1.5]; linewidth=4, alpha=0.4, label=nothing,
          legend=:topleft)
 
-    profiles_plot = plot(profile_norm(profile_e) ,  zc, alpha=0.5, linewidth=2, label="\$ (S L_z)^{-2} \\bar e \$", xlims=(0, 1))
-    plot!(profiles_plot, profile_norm(profile_vb), zc, alpha=0.8, linewidth=2, label="\$ f^{-1} (S L_z)^{-2} \\overline{vb} \$")
-    plot!(profiles_plot, profile_norm(profile_ζ²), zc, alpha=0.5, linewidth=2, label="\$ S^{-2} \\frac{1}{A} \\overline{\\zeta^2} \$")
-    plot!(profiles_plot, profile_norm(profile_b²), zc, alpha=0.5, linewidth=2, label="\$ (f S L_z)^{-2} \\overline{b^2} \$",
+    profiles_plot = plot(profile_norm(profile_e) ,  zc, alpha=0.5, linewidth=2, label="\$ \\bar e \$", xlims=(0, 1))
+    plot!(profiles_plot, profile_norm(profile_vb), zc, alpha=0.8, linewidth=2, label="\$ \\overline{vb} \$")
+    plot!(profiles_plot, profile_norm(profile_ζ²), zc, alpha=0.5, linewidth=2, label="\$ \\overline{\\zeta^2} \$")
+    plot!(profiles_plot, profile_norm(profile_b²), zc, alpha=0.5, linewidth=2, label="\$ \\overline{b^2} \$",
           legend=:topleft)
               
     surface_ζ_title = @sprintf("ζ(z=0, t=%.3e)", t)
