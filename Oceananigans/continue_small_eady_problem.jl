@@ -21,7 +21,7 @@ h_NIW = 50
 u_NIW = 0.0
 
 # Surface waves
-a = 2.0
+a = 1.0
 ω = 2π / 16
 
 const k = ω^2 / 9.81
@@ -54,7 +54,7 @@ close(file)
 
 grid = RegularCartesianGrid(size=(Nx, Ny, Nz), x=(0, Lx), y=(0, Ly), z=(-Lz, 0))
 
-prefix = @sprintf("continued_eady_problem_u_NIW%.1f_uˢ%.2f_Nh%d_Nz%d", u_NIW, uˢ, grid.Nx, grid.Nz)
+prefix = @sprintf("continued_eady_problem_u_NIW%.1f_uˢ%.3f_Nh%d_Nz%d", u_NIW, uˢ, grid.Nx, grid.Nz)
 
 N² = 1e-5 # s⁻¹, buoyancy frequency
                             
@@ -103,7 +103,7 @@ set!(model, u=initial_u, v=initial_v, w=initial_w, b=initial_b)
 cfl = 1.0
 cfl = cfl * min(cfl, drag_coefficient * grid.Δx / grid.Δz)
 
-abs_max_Δt = 3minute #20minute
+abs_max_Δt = 10minute
 
 max_Δt = min(abs_max_Δt, 0.5 * grid.Δx^4 / κ₄h, 0.5 * grid.Δz^2 / κ₂z)
 
@@ -196,7 +196,7 @@ simulation.output_writers[:checkpointer] =
 
 simulation.output_writers[:xy_surface] =
     JLD2OutputWriter(model, outputs, force = force,
-                         schedule = TimeInterval(inertial_period),
+                         schedule = TimeInterval(inertial_period/8),
                            prefix = prefix * "_xy_surface",
                      field_slicer = FieldSlicer(k=grid.Nz))
 
@@ -208,42 +208,42 @@ simulation.output_writers[:averaged_xy_surface] =
 
 simulation.output_writers[:xy_subsurface] =
     JLD2OutputWriter(model, outputs, force = force,
-                         schedule = TimeInterval(inertial_period),
+                         schedule = TimeInterval(inertial_period/8),
                            prefix = prefix * "_xy_subsurface",
                      field_slicer = FieldSlicer(k=k_subsurface))
 
 simulation.output_writers[:xy_middepth] =
     JLD2OutputWriter(model, outputs, force = force,
-                         schedule = TimeInterval(inertial_period),
+                         schedule = TimeInterval(inertial_period/8),
                            prefix = prefix * "_xy_middepth",
                      field_slicer = FieldSlicer(k=round(Int, grid.Nz/2)))
 
 simulation.output_writers[:xy_bottom] =
     JLD2OutputWriter(model, outputs, force = force,
-                         schedule = TimeInterval(inertial_period),
+                         schedule = TimeInterval(inertial_period/8),
                            prefix = prefix * "_xy_bottom",
                      field_slicer = FieldSlicer(k=1))
 
 simulation.output_writers[:xz] =
     JLD2OutputWriter(model, outputs, force = force,
-                         schedule = TimeInterval(inertial_period),
+                         schedule = TimeInterval(inertial_period/8),
                            prefix = prefix * "_xz",
                      field_slicer = FieldSlicer(j=1))
 
 simulation.output_writers[:yz] =
     JLD2OutputWriter(model, outputs, force = force,
-                         schedule = TimeInterval(inertial_period),
+                         schedule = TimeInterval(inertial_period/8),
                            prefix = prefix * "_yz",
                      field_slicer = FieldSlicer(i=1))
 
 simulation.output_writers[:horizontal_averages] =
     JLD2OutputWriter(model, horizontal_averages, force = force,
-                     schedule = TimeInterval(inertial_period),
+                     schedule = TimeInterval(inertial_period/8),
                        prefix = prefix * "_profiles")
 
 simulation.output_writers[:volume_averages] =
     JLD2OutputWriter(model, volume_averages, force = force,
-                     schedule = TimeInterval(inertial_period),
+                     schedule = TimeInterval(inertial_period/8),
                        prefix = prefix * "_volume_mean")
 
 # Press the big red button:
