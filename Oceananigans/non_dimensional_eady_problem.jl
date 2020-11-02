@@ -143,11 +143,11 @@ quadratic_drag_v_bc = BoundaryCondition(Flux, quadratic_drag_v, field_dependenci
     return ∂x_v - ∂y_u
 end
 
-@inline pumping_velocity(ζ, kp) = - ζ * kp
+@inline pumping_velocity(ζ, κᵖ) = κᵖ * ζ
 
-@inline function pumping_velocity(i, j, grid, clock, model_fields, kp)
+@inline function pumping_velocity(i, j, grid, clock, model_fields, κᵖ)
     ζʷ = ℑxyᶜᶜᵃ(i, j, 1, grid, ζᶠᶠᶜ, model_fields.u, model_fields.v)
-    return pumping_velocity(ζʷ, kp)
+    return pumping_velocity(ζʷ, κᵖ)
 end
 
 pumping_bc = BoundaryCondition(NormalFlow, pumping_velocity, discrete_form=true, parameters=kp)
