@@ -294,6 +294,7 @@ volume_vb = mean(vb, dims=(1, 2, 3))
 volume_b² = mean(b², dims=(1, 2, 3))
 volume_ζ² = mean(ζ², dims=(1, 2, 3))
 
+#=
 pickup = false
 pickup && (simulation.stop_time += 1000)
 fast_output_interval = pickup ? 10 : floor(Int, stop_time/200)
@@ -303,16 +304,16 @@ data_directory = joinpath("/home/glwagner/EadyTurbulence/Oceananigans", "data", 
 
 outputs = merge(model.velocities, model.tracers, (ζ=ζ, δ=δ))
 
-kwargs = (schedule = TimeInterval(fast_output_interval), dir = data_directory, max_filesize = 2GiB, force = force)
+kwargs = (dir = data_directory, max_filesize = 2GiB, force = force)
 
 simulation.output_writers[:checkpointer] =
     Checkpointer(model, schedule=TimeInterval(floor(Int, stop_time/10)), prefix=prefix * "_checkpointer", dir=data_directory)
 
-simulation.output_writers[:xy_surface]     = JLD2OutputWriter(model, outputs; prefix=prefix*"_xy_surface",     field_slicer=FieldSlicer(k=grid.Nz), kwargs...)
-simulation.output_writers[:xy_bottom]      = JLD2OutputWriter(model, outputs; prefix=prefix*"_xy_bottom",      field_slicer=FieldSlicer(k=1),       kwargs...)
-simulation.output_writers[:xy_near_bottom] = JLD2OutputWriter(model, outputs; prefix=prefix*"_xy_near_bottom", field_slicer=FieldSlicer(k=2),       kwargs...)
-simulation.output_writers[:xz]             = JLD2OutputWriter(model, outputs; prefix=prefix*"_xz",             field_slicer=FieldSlicer(j=1),       kwargs...)
-simulation.output_writers[:yz]             = JLD2OutputWriter(model, outputs; prefix=prefix*"_xy",             field_slicer=FieldSlicer(i=1),       kwargs...)
+simulation.output_writers[:xy_surface]     = JLD2OutputWriter(model, outputs; prefix=prefix*"_xy_surface",     field_slicer=FieldSlicer(k=grid.Nz), schedule = TimeInterval(fast_output_interval), kwargs...)
+simulation.output_writers[:xy_bottom]      = JLD2OutputWriter(model, outputs; prefix=prefix*"_xy_bottom",      field_slicer=FieldSlicer(k=1),       schedule = TimeInterval(fast_output_interval), kwargs...)
+simulation.output_writers[:xy_near_bottom] = JLD2OutputWriter(model, outputs; prefix=prefix*"_xy_near_bottom", field_slicer=FieldSlicer(k=2),       schedule = TimeInterval(fast_output_interval), kwargs...)
+simulation.output_writers[:xz]             = JLD2OutputWriter(model, outputs; prefix=prefix*"_xz",             field_slicer=FieldSlicer(j=1),       schedule = TimeInterval(fast_output_interval), kwargs...)
+simulation.output_writers[:yz]             = JLD2OutputWriter(model, outputs; prefix=prefix*"_xy",             field_slicer=FieldSlicer(i=1),       schedule = TimeInterval(fast_output_interval), kwargs...)
     
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, (e=profile_e, vb=profile_vb, ζ²=profile_ζ², b²=profile_b², bz=profile_bz);
@@ -329,6 +330,7 @@ simulation.output_writers[:volume] =
 #####
 
 run!(simulation, pickup=pickup)
+=#
 
 #####
 ##### Visualizing Eady turbulence
@@ -379,8 +381,8 @@ anim = @animate for (i, iter) in enumerate(iterations)
     t = surface_file["timeseries/t/$iter"]
 
     surface_ζ = surface_file["timeseries/ζ/$iter"][:, :, 1]
-    bottom_ζ = bottom_file["timeseries/ζ/$iter"][:, :, 1]
-    bottom_w = near_bottom_file["timeseries/w/$iter"][:, :, 1]
+    #bottom_w = near_bottom_file["timeseries/w/$iter"][:, :, 1]
+    bottom_w = surface_file["timeseries/w/$iter"][:, :, 1]
 
     profile_e  = profiles_file["timeseries/e/$iter"][1, 1, :]
     profile_vb = profiles_file["timeseries/vb/$iter"][1, 1, :]
@@ -400,7 +402,6 @@ anim = @animate for (i, iter) in enumerate(iterations)
               xlims = (0, grid.Lx), ylims = (0, grid.Lx), xlabel = "x (m)", ylabel = "y (m)")
                            
     surface_ζ_plot = contourf(xζ, yζ, surface_ζ'; clims=(-ζlim, ζlim), levels=ζlevels, kwargs...)
-    bottom_ζ_plot  = contourf(xζ, yζ, bottom_ζ';  clims=(-ζlim, ζlim), levels=ζlevels, kwargs...)
     bottom_w_plot  = contourf(xw, yw, bottom_w';  clims=(-wlim, wlim), levels=wlevels, kwargs...)
 
     volume_mean_plot = plot(time, timeseries_norm(mean_e) ;  linewidth=2, alpha=0.6, label="⟨e⟩", xlabel="time", ylabel="Volume mean")
@@ -418,7 +419,6 @@ anim = @animate for (i, iter) in enumerate(iterations)
           legend=:topleft)
               
     surface_ζ_title = @sprintf("ζ(z=0, t=%.3e)", t)
-    bottom_ζ_title = @sprintf("ζ(z=-Lz, t=%.3e)", t)
     bottom_w_title = @sprintf("w(z=-Lz, t=%.3e) (m s⁻¹)", t)
     profiles_title = @sprintf("Normalized horizontal averages (t=%.3e)", t)
 
