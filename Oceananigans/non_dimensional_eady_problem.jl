@@ -294,7 +294,6 @@ volume_vb = mean(vb, dims=(1, 2, 3))
 volume_b² = mean(b², dims=(1, 2, 3))
 volume_ζ² = mean(ζ², dims=(1, 2, 3))
 
-#=
 pickup = false
 pickup && (simulation.stop_time += 1000)
 fast_output_interval = pickup ? 10 : floor(Int, stop_time/200)
@@ -330,7 +329,6 @@ simulation.output_writers[:volume] =
 #####
 
 run!(simulation, pickup=pickup)
-=#
 
 #####
 ##### Visualizing Eady turbulence
