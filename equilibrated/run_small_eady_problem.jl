@@ -233,55 +233,55 @@ save_interval_days = 2
 
 simulation.output_writers[:fields] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
                                                       time_interval = year,
-                                                             prefix = prefix * "_fields",
-                                                              force = true)
+                                                      prefix = prefix * "_fields",
+                                                      force = true)
 
 simulation.output_writers[:xy_surface] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                      time_interval = save_interval_days * day,
-                                                             prefix = prefix * "_xy_surface",
-                                                       field_slicer = FieldSlicer(k=grid.Nz),
-                                                              force = true)
+                                                          schedule = TimeInterval(save_interval_days * days),
+                                                          prefix = prefix * "_xy_surface",
+                                                          field_slicer = FieldSlicer(k=grid.Nz),
+                                                          force = true)
 
 k_subsurface = searchsortedfirst(znodes(Cell, grid), -200)
 
 simulation.output_writers[:xy_subsurface] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                      time_interval = save_interval_days * day,
+                                                             schedule = TimeInterval(save_interval_days * days),
                                                              prefix = prefix * "_xy_subsurface",
-                                                       field_slicer = FieldSlicer(k=k_subsurface),
+                                                             field_slicer = FieldSlicer(k=k_subsurface),
 
 simulation.output_writers[:xy_middepth] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                           time_interval = save_interval_days * day,
-                                                                  prefix = prefix * "_xy_middepth",
-                                                            field_slicer = FieldSlicer(k=round(Int, grid.Nz/2)),
-                                                                   force = true)
+                                                           schedule = TimeInterval(save_interval_days * days),
+                                                           prefix = prefix * "_xy_middepth",
+                                                           field_slicer = FieldSlicer(k=round(Int, grid.Nz/2)),
+                                                           force = true)
 
 simulation.output_writers[:xy_bottom] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                         time_interval = save_interval_days * day,
-                                                                prefix = prefix * "_xy_bottom",
-                                                          field_slicer = FieldSlicer(k=1),
-                                                                 force = true)
+                                                         schedule = TimeInterval(save_interval_days * days),
+                                                         prefix = prefix * "_xy_bottom",
+                                                         field_slicer = FieldSlicer(k=1),
+                                                         force = true)
 
 simulation.output_writers[:xz] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                  time_interval = save_interval_days * day,
-                                                         prefix = prefix * "_xz",
-                                                   field_slicer = FieldSlicer(j=1),
-                                                          force = true)
+                                                  schedule = TimeInterval(save_interval_days * days),
+                                                  prefix = prefix * "_xz",
+                                                  field_slicer = FieldSlicer(j=1),
+                                                  force = true)
 
 simulation.output_writers[:yz] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                  time_interval = save_interval_days * day,
-                                                               prefix = prefix * "_yz",
-                                                         field_slicer = FieldSlicer(i=1),
-                                                                force = true)
+                                                  schedule = TimeInterval(save_interval_days * days),
+                                                  prefix = prefix * "_yz",
+                                                  field_slicer = FieldSlicer(i=1),
+                                                  force = true)
 
 simulation.output_writers[:horizontal_averages] = JLD2OutputWriter(model, horizontal_averages,
-                                                                   time_interval = save_interval_days * day,
-                                                                          prefix = prefix * "_profiles",
-                                                                           force = true)
+                                                                   schedule = TimeInterval(save_interval_days * days),
+                                                                   prefix = prefix * "_profiles",
+                                                                   force = true)
 
 simulation.output_writers[:volume_averages] = JLD2OutputWriter(model, volume_averages,
-                                                               time_interval = save_interval_days * day,
-                                                                      prefix = prefix * "_volume_mean",
-                                                                       force = true)
+                                                               schedule = TimeInterval(save_interval_days * days),
+                                                               prefix = prefix * "_volume_mean",
+                                                               force = true)
 
 # Press the big red button:
 
