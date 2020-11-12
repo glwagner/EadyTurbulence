@@ -1,0 +1,8 @@
+#!/bin/bash
+
+source ~/.bash_profile
+
+scp_satori /home/glwagner/EadyTurbulence/Oceananigans/data/non_dimensional_eady_linear-drag_vEkman1.0e-05_Nh256_Nz32/non_dimensional_eady_linear-drag_vEkman1.0e-05_Nh256_Nz32_volume_mean.jld2
+scp_satori /home/glwagner/EadyTurbulence/Oceananigans/data/non_dimensional_eady_linear-drag_vEkman1.0e-05_Nh192_Nz32/non_dimensional_eady_linear-drag_vEkman1.0e-05_Nh192_Nz32_volume_mean.jld2
+scp_satori /home/glwagner/EadyTurbulence/Oceananigans/data/non_dimensional_eady_pumping-velocity_vEkman1.0e-05_Nh256_Nz32/non_dimensional_eady_pumping-velocity_vEkman1.0e-05_Nh256_Nz32_volume_mean.jld2
+scp_satori /home/glwagner/EadyTurbulence/Oceananigans/data/non_dimensional_eady_pumping-velocity_vEkman1.0e-05_Nh192_Nz32/non_dimensional_eady_pumping-velocity_vEkman1.0e-05_Nh192_Nz32_volume_mean.jld2
