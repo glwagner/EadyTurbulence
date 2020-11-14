@@ -33,7 +33,7 @@ function parse_command_line_arguments()
 
         "--geostrophic-shear"
             help = """The geostrophic shear non-dimensionalized by f."""
-            default = 1e-4
+            default = 1e-3
             arg_type = Float64
 
         "--years"
@@ -67,7 +67,7 @@ stop_years = args["years"]
 year = 365day
 
 # Output names
-prefix = @sprintf("eady_initial_value_problem_Nh%d_Nz%d_αf%.2e", Nh, Nz, α / f)
+prefix = @sprintf("sinusoidal_eady_Nh%d_Nz%d_αf%.2e", Nh, Nz, α / f)
 output_dir = joinpath("data", prefix)
 mkpath(output_dir)
 
@@ -75,15 +75,22 @@ mkpath(output_dir)
 grid = RegularCartesianGrid(size = (Nh, Nh, Nz), x = (0, L), y = (0, L), z = (-H, 0),
                             topology = (Periodic, Bounded, Bounded))
 
-b_bcs = TracerBoundaryConditions(grid,
-                                 top = GradientBoundaryCondition(N²),
-                                 bottom = GradientBoundaryCondition(N²),
-                                 north = GradientBoundaryCondition(α * f),
-                                 south = GradientBoundaryCondition(α * f))
+λ = L / π
+U(y, z) = + α * sin(y / λ) * (z + H)
+B(y, z) = - α * f * λ * cos(y / λ) + N² * z
+
+surface_Uz(x, y, t, p) = p.α * p.H * sin(y / p.λ)
+
+#b_bcs = TracerBoundaryConditions(grid,
+#                                 top = GradientBoundaryCondition(N²),
+#                                 bottom = GradientBoundaryCondition(N²))
 
 u_bcs = UVelocityBoundaryConditions(grid,
-                                    top = GradientBoundaryCondition(α),
-                                    bottom = GradientBoundaryCondition(α))
+                                    north = ValueBoundaryCondition(0),
+                                    south = ValueBoundaryCondition(0),
+                                    #top = GradientBoundaryCondition(surface_Uz, parameters=(α=α, H=H, λ=λ)),
+                                    bottom = ValueBoundaryCondition(0),
+                                   )
 
 # # Model instantiation
 
@@ -99,13 +106,11 @@ model = IncompressibleModel(
     boundary_conditions = (u=u_bcs, b=b_bcs)
 )
 
-U(z) = + α * (z + H)
-B(y, z) = - α * f * y + N² * z
 
 # A noise function, damped at the top and bottom
 Ξ(z) = randn() * z/grid.Lz * (z/grid.Lz + 1)
 
-uᵢ(x, y, z) = U(z)
+uᵢ(x, y, z) = U(y, z)
 bᵢ(x, y, z) = B(y, z) + α * f * L * 1e-3 * Ξ(z)
 
 set!(model, u=uᵢ, b=bᵢ)
