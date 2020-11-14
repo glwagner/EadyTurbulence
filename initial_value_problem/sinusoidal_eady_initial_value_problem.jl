@@ -33,7 +33,7 @@ function parse_command_line_arguments()
 
         "--geostrophic-shear"
             help = """The geostrophic shear non-dimensionalized by f."""
-            default = 1e-3
+            default = 1e-4
             arg_type = Float64
 
         "--years"
