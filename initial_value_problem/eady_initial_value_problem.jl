@@ -20,12 +20,12 @@ function parse_command_line_arguments()
     @add_arg_table! settings begin
         "--Nh"
             help = "The number of grid points in x, y."
-            default = 32
+            default = 64
             arg_type = Int
 
         "--Nz"
             help = "The number of grid points in z."
-            default = 32
+            default = 16
             arg_type = Int
 
         "--geostrophic-shear"
@@ -35,7 +35,7 @@ function parse_command_line_arguments()
 
         "--years"
             help = """The length of the simulation in years."""
-            default = 1.0
+            default = 0.25
             arg_type = Float64
     end
 
@@ -58,6 +58,8 @@ N² = 1e-5 # s⁻²
 νh = κh = 1e3 # m² s⁻¹
 νz = κz = 1e-2 # m² s⁻¹
 
+output_interval_days = 2
+
 stop_years = args["years"]
 year = 365day
 
@@ -68,6 +70,7 @@ prefix = @sprintf("eady_initial_value_problem_Nh%d_Nz%d_αf%.2e", Nh, Nz, α / f
 grid = RegularCartesianGrid(size = (Nh, Nh, Nz), x = (0, L), y = (0, L), z = (-H, 0),
                             topology = (Periodic, Bounded, Bounded))
 
+#=
 b_bcs = TracerBoundaryConditions(grid,
                                  top = GradientBoundaryCondition(N²),
                                  bottom = GradientBoundaryCondition(N²),
@@ -77,6 +80,7 @@ b_bcs = TracerBoundaryConditions(grid,
 u_bcs = UVelocityBoundaryConditions(grid,
                                     top = GradientBoundaryCondition(α),
                                     bottom = GradientBoundaryCondition(α))
+=#
 
 # # Model instantiation
 
@@ -142,88 +146,45 @@ b = model.tracers.b
 ζ = ComputedField(∂x(v) - ∂y(u)) # Vertical vorticity [s⁻¹]
 δ = ComputedField(-∂z(w)) # Horizontal divergence, or ∂x(u) + ∂y(v) [s⁻¹]
 
-## Eddy kinetic energy and buoyancy flux
+output_fields = merge(model.velocities, model.tracers, (ζ=ζ, δ=δ))
+
+## Kinetic energy and buoyancy flux
+e_op = @at (Cell, Cell, Cell) (u^2 + v^2 + w^2) / 2
+e  = ComputedField(e_op)
 b² = ComputedField(b^2)
 ζ² = ComputedField(ζ^2)
 
-horizontal_average_u  = mean(u,     dims=(1, 2))
-horizontal_average_v  = mean(v,     dims=(1, 2))
-horizontal_average_b  = mean(b,     dims=(1, 2))
-horizontal_average_ζ² = mean(ζ²,    dims=(1, 2))
-horizontal_average_b² = mean(b²,    dims=(1, 2))
-horizontal_average_bz = mean(∂z(b), dims=(1, 2))
+volume_averages = (e = mean(e, dims=(1, 2, 3)),
+                   ζ² = mean(ζ², dims=(1, 2, 3)),
+                   b² = mean(b², dims=(1, 2, 3)))
 
-horizontal_averages = (
-                       u  = horizontal_average_u,
-                       v  = horizontal_average_v,
-                       b  = horizontal_average_b,
-                       ζ² = horizontal_average_ζ²,
-                       b² = horizontal_average_b²,
-                       bz = horizontal_average_bz,
-                      )
-
-volume_average_b² = mean(b², dims=(1, 2, 3))
-volume_average_ζ² = mean(ζ², dims=(1, 2, 3))
-
-volume_averages = (
-                   ζ² = volume_average_ζ²,
-                   b² = volume_average_b²,
-                  )
-
-save_interval_days = 2
+simulation.output_writers[:volume_averages] =
+    JLD2OutputWriter(model, volume_averages,
+                     schedule = TimeInterval(day / 4),
+                     prefix = prefix * "_volume_averages",
+                     force = true)
 
 simulation.output_writers[:checkpointer] = Checkpointer(model, prefix = prefix * "_checkpointer",
                                                         schedule = TimeInterval(year))
 
-simulation.output_writers[:xy_surface] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                          schedule = TimeInterval(save_interval_days * day),
-                                                          prefix = prefix * "_xy_surface",
-                                                          field_slicer = FieldSlicer(k=grid.Nz),
-                                                          force = true)
-
 k_subsurface = searchsortedfirst(znodes(Cell, grid), -100)
+k_middepth = searchsortedfirst(znodes(Cell, grid), -grid.Lz/2)
 
-simulation.output_writers[:xy_subsurface] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                             schedule = TimeInterval(save_interval_days * day),
-                                                             prefix = prefix * "_xy_subsurface",
-                                                             field_slicer = FieldSlicer(k=k_subsurface),
-                                                             force = true)
+slicers = Dict(:xz => FieldSlicer(j=grid.Ny/2),
+               :yz => FieldSlicer(i=1),
+               :xy_surface => FieldSlicer(k=grid.Nz),
+               :xy_subsurface => FieldSlicer(k=k_subsurface),
+               :xy_middepth => FieldSlicer(k=k_middepth),
+               :xy_nearbottom => FieldSlicer(k=2))
 
-simulation.output_writers[:xy_middepth] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                           schedule = TimeInterval(save_interval_days * day),
-                                                           prefix = prefix * "_xy_middepth",
-                                                           field_slicer = FieldSlicer(k=round(Int, grid.Nz/2)),
-                                                           force = true)
-
-simulation.output_writers[:xy_bottom] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                         schedule = TimeInterval(save_interval_days * day),
-                                                         prefix = prefix * "_xy_bottom",
-                                                         field_slicer = FieldSlicer(k=1),
-                                                         force = true)
-
-simulation.output_writers[:xz] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                  schedule = TimeInterval(save_interval_days * day),
-                                                  prefix = prefix * "_xz",
-                                                  field_slicer = FieldSlicer(j=1),
-                                                  force = true)
-
-simulation.output_writers[:yz] = JLD2OutputWriter(model, merge(model.velocities, model.tracers, (ζ=ζ, δ=δ)),
-                                                  schedule = TimeInterval(save_interval_days * day),
-                                                  prefix = prefix * "_yz",
-                                                  field_slicer = FieldSlicer(i=1),
-                                                  force = true)
-
-#=
-simulation.output_writers[:horizontal_averages] = JLD2OutputWriter(model, horizontal_averages,
-                                                                   schedule = TimeInterval(save_interval_days * day),
-                                                                          prefix = prefix * "_profiles",
-                                                                           force = true)
-
-simulation.output_writers[:volume_averages] = JLD2OutputWriter(model, volume_averages,
-                                                               schedule = TimeInterval(save_interval_days * day),
-                                                                      prefix = prefix * "_volume_mean",
-                                                                       force = true)
-=#
+for (name, slicer) in slicers
+    simulation.output_writers[name] =
+        JLD2OutputWriter(model, output_fields,
+                         schedule = TimeInterval(output_interval_days * day),
+                         prefix = prefix * string("_", name),
+                         field_slicer = slicer,
+                         force = true)
+end
 
 # Press the big red button:
 
@@ -240,7 +201,7 @@ f = file["coriolis/f"]
 
 ## Coordinate arrays
 xζ, yζ, zζ = nodes((Face, Face, Cell), grid)
-xδ, yδ, zδ = nodes((Cell, Cell, Cell), grid)
+xw, yw, zw = nodes((Cell, Cell, Face), grid)
 
 ## Extract a vector of iterations
 iterations = parse.(Int, keys(file["timeseries/t"]))
@@ -260,6 +221,10 @@ end
 
 anim = @animate for (i, iter) in enumerate(iterations)
 
+    local u
+    local v
+    local w
+
     ## Load 3D fields from file
     t = file["timeseries/t/$iter"]
 
@@ -274,8 +239,7 @@ anim = @animate for (i, iter) in enumerate(iterations)
     @views ũ[1:end-1, :] = @. (u[1:end-1, :] + u[2:end, :]) / 2
     @views ũ[end, :]     = @. (u[1, :]       + u[end, :])   / 2
 
-    @views ṽ[:, 1:end-1] = @. (v[:, 1:end-1] + v[:, 2:end]) / 2
-    @views ṽ[:, end]     = @. (v[:, 1]       + v[:, end])   / 2
+    @views @. ṽ = (v[:, 1:end-1] + v[:, 2:end]) / 2
 
     s = @. sqrt(ũ^2 + ṽ^2)
 
@@ -287,7 +251,7 @@ anim = @animate for (i, iter) in enumerate(iterations)
     Rlevels = nice_divergent_levels(R, Rlim)
 
     smax = maximum(abs, s) + 1e-9
-    slevels = range(0, stop=slim, length=30)
+    slevels = collect(range(0, stop=slim, length=30))
     slim < smax && push!(slevels, smax)
 
     @info @sprintf("Drawing frame %d from iteration %d: max(ζ̃ / f) = %.3f \n",
@@ -305,7 +269,7 @@ anim = @animate for (i, iter) in enumerate(iterations)
                            xlabel = "x (m)",
                            ylabel = "y (m)")
 
-    w_plot = contourf(xδ, yδ, w';
+    w_plot = contourf(xw, yw, w';
                          colorbar = true,
                             color = :balance,
                       aspectratio = 1,
