@@ -63,8 +63,10 @@ output_interval_days = 2
 stop_years = args["years"]
 year = 365day
 
-# Output file name
+# Output names
 prefix = @sprintf("eady_initial_value_problem_Nh%d_Nz%d_αf%.2e", Nh, Nz, α / f)
+output_dir = "data"
+mkpath(output_dir)
 
 # Doin' stuff
 grid = RegularCartesianGrid(size = (Nh, Nh, Nz), x = (0, L), y = (0, L), z = (-H, 0),
@@ -161,10 +163,13 @@ volume_averages = (e = mean(e, dims=(1, 2, 3)),
 simulation.output_writers[:volume_averages] =
     JLD2OutputWriter(model, volume_averages,
                      schedule = TimeInterval(day / 4),
+                     dir = output_dir,
                      prefix = prefix * "_volume_averages",
                      force = true)
 
-simulation.output_writers[:checkpointer] = Checkpointer(model, prefix = prefix * "_checkpointer",
+simulation.output_writers[:checkpointer] = Checkpointer(model,
+                                                        prefix = prefix * "_checkpointer",
+                                                        dir = output_dir,
                                                         schedule = TimeInterval(year))
 
 k_subsurface = searchsortedfirst(znodes(Cell, grid), -100)
@@ -181,6 +186,7 @@ for (name, slicer) in slicers
     simulation.output_writers[name] =
         JLD2OutputWriter(model, output_fields,
                          schedule = TimeInterval(output_interval_days * day),
+                         dir = output_dir,
                          prefix = prefix * string("_", name),
                          field_slicer = slicer,
                          force = true)
