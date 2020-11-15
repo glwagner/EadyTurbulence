@@ -58,10 +58,12 @@ N² = 1e-5 # s⁻²
  L = 1e6  # m
  H = 1e3  # m
 
-νh = κh = 1e3 # m² s⁻¹
+νh = κh = 1e4 # m² s⁻¹
 νz = κz = 1e-2 # m² s⁻¹
 
-output_interval_days = 2
+λ = L / π
+
+output_interval_days = 0.1
 
 stop_years = args["years"]
 year = 365day
@@ -75,27 +77,25 @@ mkpath(output_dir)
 grid = RegularCartesianGrid(size = (Nh, Nh, Nz), x = (0, L), y = (0, L), z = (-H, 0),
                             topology = (Periodic, Bounded, Bounded))
 
-λ = L / π
-U(y, z) = + α * sin(y / λ) * (z + H)
-B(y, z) = - α * f * λ * cos(y / λ) + N² * z
+uᵢ(y, z) = + α * sin(y / λ) * (z + H)
+bᵢ(y, z) = + α * f * λ * cos(y / λ) + N² * z
 
 surface_Uz(x, y, t, p) = p.α * p.H * sin(y / p.λ)
 
-#b_bcs = TracerBoundaryConditions(grid,
-#                                 top = GradientBoundaryCondition(N²),
-#                                 bottom = GradientBoundaryCondition(N²))
+b_bcs = TracerBoundaryConditions(grid)
+                                 #top = GradientBoundaryCondition(N²),
+                                 #bottom = GradientBoundaryCondition(N²))
 
 u_bcs = UVelocityBoundaryConditions(grid,
                                     north = ValueBoundaryCondition(0),
                                     south = ValueBoundaryCondition(0),
+                                    bottom = ValueBoundaryCondition(0))
                                     #top = GradientBoundaryCondition(surface_Uz, parameters=(α=α, H=H, λ=λ)),
-                                    bottom = ValueBoundaryCondition(0),
-                                   )
 
 # # Model instantiation
 
 model = IncompressibleModel(
-           architecture = CPU(),
+           architecture = GPU(),
                    grid = grid,
               advection = WENO5(),
             timestepper = :RungeKutta3,
@@ -115,7 +115,7 @@ bᵢ(x, y, z) = B(y, z) + α * f * L * 1e-3 * Ξ(z)
 
 set!(model, u=uᵢ, b=bᵢ)
 
-max_Δt = hour / 2
+max_Δt = hour / 3
 
 wizard = TimeStepWizard(cfl=1.0, Δt=max_Δt, max_change=1.1, max_Δt=max_Δt)
 
@@ -254,21 +254,24 @@ anim = @animate for (i, iter) in enumerate(iterations)
 
     s = @. sqrt(ũ^2 + ṽ^2)
 
-    slim = 0.8 * maximum(abs, s) + 1e-9
-    wlim = 0.8 * maximum(abs, w) + 1e-9
-    Rlim = 0.8 * maximum(abs, R) + 1e-9
+    slim = 0.2 #0.8 * maximum(abs, s) + 1e-9
+    wlim = 1e-4 #0.8 * maximum(abs, w) + 1e-9
+    Rlim = 0.4 #0.8 * maximum(abs, R) + 1e-9
 
-    wlevels = nice_divergent_levels(w, wlim)
-    Rlevels = nice_divergent_levels(R, Rlim)
+    #wlevels = nice_divergent_levels(w, wlim)
+    #Rlevels = nice_divergent_levels(R, Rlim)
+    
+    wlevels = range(-wlim, stop=wlim, length=30)
+    Rlevels = range(-Rlim, stop=Rlim, length=30)
 
     smax = maximum(abs, s) + 1e-9
     slevels = collect(range(0, stop=slim, length=30))
-    slim < smax && push!(slevels, smax)
+    #slim < smax && push!(slevels, smax)
 
-    @info @sprintf("Drawing frame %d from iteration %d: max(ζ̃ / f) = %.3f \n",
-                   i, iter, maximum(abs, R))
+    @info @sprintf("Drawing frame %d from iteration %d: time: %s, max(ζ̃ / f) = %.3f \n",
+                   i, iter, prettytime(t), maximum(abs, R))
 
-    R_plot = contourf(xζ, yζ, R';
+    R_plot = contourf(xζ, yζ, clamp.(R, -Rlim, Rlim)';
                          colorbar = true,
                             color = :balance,
                       aspectratio = 1,
@@ -280,7 +283,7 @@ anim = @animate for (i, iter) in enumerate(iterations)
                            xlabel = "x (m)",
                            ylabel = "y (m)")
 
-    w_plot = contourf(xw, yw, w';
+    w_plot = contourf(xw, yw, clamp.(w, -wlim, wlim)';
                          colorbar = true,
                             color = :balance,
                       aspectratio = 1,
@@ -292,7 +295,7 @@ anim = @animate for (i, iter) in enumerate(iterations)
                            xlabel = "x (m)",
                            ylabel = "y (m)")
 
-    s_plot = contourf(xδ, yδ, s';
+    s_plot = contourf(xw, yw, clamp.(s, 0, slim)';
                          colorbar = true,
                             color = :thermal,
                       aspectratio = 1,
@@ -304,12 +307,12 @@ anim = @animate for (i, iter) in enumerate(iterations)
                            xlabel = "x (m)",
                            ylabel = "y (m)")
 
-    ζ_title = @sprintf("ζ(z=0, t=%s) / f", prettytime(t))
-    w_title = @sprintf("w(z=0, t=%s) (m s⁻¹)", prettytime(t))
-    s_title = @sprintf("\$ \\sqrt{u^2 + v^2} \\, |_{z=0, t=%s} \$ (m s⁻¹)", prettytime(t))
+    ζ_title = @sprintf("ζ(z=0) at t=%s / f", prettytime(t))
+    w_title = @sprintf("w(z=0) at t=%s (m s⁻¹)", prettytime(t))
+    s_title = @sprintf("\$ \\sqrt{u^2 + v^2} \\, |_{z=0} at t=%s \$ (m s⁻¹)", prettytime(t))
 
     plot(R_plot, w_plot, s_plot,
-           size = (1200, 600),
+           size = (1500, 600),
          layout = (1, 3),
           title = [ζ_title w_title s_title])
 
