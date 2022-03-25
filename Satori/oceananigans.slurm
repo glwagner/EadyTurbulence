@@ -4,7 +4,7 @@
 #SBATCH --output=slurm-eady-%j.out
 #SBATCH --error=slurm-eady-%j.err
 #SBATCH --time=12:00:00
-#SBARCH --mem=0
+#SBATCH --mem=0
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
 #SBATCH --gres="gpu:4" # GPUs per Node
